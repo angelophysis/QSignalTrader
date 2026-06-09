@@ -1,0 +1,12 @@
+yfinance
+pandas
+numpy
+python-docx
+ccxt
+fastapi
+uvicorn
+jinja2
+pytz
+requests
+openpyxl
+streamlit

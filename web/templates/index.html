@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QSignalTrader</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>QSignalTrader</h1>
+        <span class="subtitle">Análise Técnica — Sinais de Tendência</span>
+    </header>
+
+    <main>
+        <section class="search-section">
+            <div class="search-box">
+                <input type="text" id="symbolInput" placeholder="Ex: BTC/USDT, ETH/USDT, AAPL, TSLA, NVDA..."
+                       autocomplete="off" autofocus>
+                <button id="searchBtn">Analisar</button>
+            </div>
+            <div class="quick-buttons">
+                <button class="quick-btn crypto" data-symbol="BTC/USDT">BTC</button>
+                <button class="quick-btn crypto" data-symbol="ETH/USDT">ETH</button>
+                <button class="quick-btn crypto" data-symbol="SOL/USDT">SOL</button>
+                <button class="quick-btn stock" data-symbol="AAPL">AAPL</button>
+                <button class="quick-btn stock" data-symbol="TSLA">TSLA</button>
+                <button class="quick-btn stock" data-symbol="NVDA">NVDA</button>
+                <button class="quick-btn stock" data-symbol="SPY">SPY</button>
+                <button class="quick-btn stock" data-symbol="QQQ">QQQ</button>
+            </div>
+        </section>
+
+        <section class="radar-section">
+            <div class="radar-buttons">
+                <button id="btnRadarCripto" class="radar-btn crypto">🔎 Radar Cripto</button>
+                <button id="btnRadarAcoes" class="radar-btn stock">🔎 Radar Ações</button>
+                <button id="btnRadarForce" class="radar-btn force" title="Ignorar cache">🔄 Atualizar</button>
+            </div>
+            <div id="radarStatus" class="radar-status hidden"></div>
+            <div id="radarResults" class="card hidden">
+                <div class="card-header"><h2 id="radarTitle">Radar</h2></div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead><tr><th>Ativo</th><th>Preço</th><th>Var.</th><th>RSI</th><th>Tendência</th><th>Volatilidade</th><th>Decisão</th></tr></thead>
+                        <tbody id="radarBody"></tbody>
+                    </table>
+                </div>
+                <p id="radarSummary" class="timestamp" style="padding:0 1.25rem 0.75rem;"></p>
+            </div>
+        </section>
+
+        <section id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <span>Analisando...</span>
+        </section>
+
+        <section id="error" class="error hidden"></section>
+
+        <section id="results" class="hidden">
+            <!-- Market Summary -->
+            <div id="marketSummaryPanel" class="card hidden">
+                <div class="card-header"><h2>📈 Resumo de Mercado</h2></div>
+                <div class="card-body">
+                    <div class="market-summary-grid">
+                        <div class="market-item">
+                            <span class="market-label">Preço atual</span>
+                            <span id="mktPreco" class="market-value">--</span>
+                        </div>
+                        <div class="market-item">
+                            <span class="market-label">Variação</span>
+                            <span id="mktVar" class="market-value">--</span>
+                        </div>
+                        <div class="market-item">
+                            <span class="market-label">Mínima</span>
+                            <span id="mktMin" class="market-value">--</span>
+                        </div>
+                        <div class="market-item">
+                            <span class="market-label">Máxima</span>
+                            <span id="mktMax" class="market-value">--</span>
+                        </div>
+                    </div>
+                    <p id="mktPeriodo" class="timestamp" style="margin-top:0.5rem;"></p>
+                </div>
+            </div>
+
+            <!-- Card Resumo -->
+            <div class="card summary-card">
+                <div class="card-header">
+                    <h2 id="summarySymbol">--</h2>
+                    <span id="summaryTipo" class="badge">--</span>
+                </div>
+                <div class="card-body">
+                    <p id="summaryInterpretacao" class="interpretacao">--</p>
+                    <p id="summaryTimestamp" class="timestamp">--</p>
+                </div>
+            </div>
+
+            <!-- Painel Volatilidade -->
+            <div id="btcVolPanel" class="card hidden">
+                <div class="card-header">
+                    <h2 id="volTitle">🧪 Volatilidade</h2>
+                    <span id="volRegime" class="badge vol-regime">--</span>
+                </div>
+                <div class="card-body">
+                    <p id="volMensagem" class="interpretacao"></p>
+                    <p id="volComentario" class="vol-leitura"></p>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead><tr><th>TF</th><th>ATR%</th><th>%ile</th><th>Nível</th><th>Movimento</th><th>Papel</th></tr></thead>
+                            <tbody id="volTfBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="volImplicita" class="vol-leitura" style="margin-top:0.75rem;"></div>
+                    <div id="volEstrategias" class="vol-estrategias"></div>
+                </div>
+            </div>
+
+            <!-- Decisão Operacional -->
+            <div id="decisaoCard" class="card hidden">
+                <div class="card-header">
+                    <h2>📋 Decisão Operacional</h2>
+                    <span id="decisaoConfianca" class="badge">--</span>
+                </div>
+                <div class="card-body">
+                    <p id="decisaoTexto" class="interpretacao"></p>
+                    <p id="decisaoExplicacao" class="vol-leitura"></p>
+                    <div id="decisaoAlertas"></div>
+                </div>
+            </div>
+
+            <!-- RSI de Entrada -->
+            <div id="rsiEntryPanel" class="card hidden">
+                <div class="card-header"><h2>📊 RSI de Entrada</h2></div>
+                <div class="card-body">
+                    <p id="rsiEntryPrincipal" class="interpretacao"></p>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead><tr><th>TF</th><th>RSI</th><th>Estado</th><th>Peso</th></tr></thead>
+                            <tbody id="rsiEntryBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estratégias para Opções BTC -->
+            <div id="btcOptionsStrategiesPanel" class="card hidden">
+                <div class="card-header">
+                    <h2>📋 Estratégias para Opções de BTC</h2>
+                    <span class="badge vol-regime">Estudo educacional</span>
+                </div>
+                <div class="card-body">
+                    <p id="optionsClassificacao" class="vol-leitura"></p>
+                    <div id="optionsPrioritarias" class="strategy-section"></div>
+                    <div id="optionsSecundarias" class="strategy-section"></div>
+                    <div id="optionsEvitar" class="strategy-section strategy-caution"></div>
+                    <p id="optionsDisclaimer" class="timestamp" style="margin-top:1rem;"></p>
+                </div>
+            </div>
+
+            <!-- Tabela Timeframes -->
+            <div class="card">
+                <div class="card-header"><h2>Timeframes</h2></div>
+                <div class="table-wrapper">
+                    <table id="tfTable">
+                        <thead>
+                            <tr>
+                                <th>TF</th>
+                                <th>EMAs Alinhadas</th>
+                                <th>RSI</th>
+                                <th>RSI &gt; 58</th>
+                                <th>ATR</th>
+                                <th>Tendência</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tfBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tabela Timeframes -->
+            <div class="card">
+                <div class="card-header"><h2>Indicadores</h2></div>
+                <div id="indicatorsGrid" class="indicators-grid"></div>
+            </div>
+
+            <!-- Histórico -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Histórico de Sinais</h2>
+                    <div class="history-controls">
+                        <select id="historyLimit">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                        </select>
+                        <button id="refreshHistory" class="btn-sm">Atualizar</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table id="historyTable">
+                        <thead>
+                            <tr>
+                                <th>Data/Hora</th>
+                                <th>Ativo</th>
+                                <th>Tipo</th>
+                                <th>Interpretação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <span>QSignalTrader &mdash; Sinais para Position Trade</span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
