@@ -133,6 +133,21 @@ with tab1:
         c4.metric("Máxima", _fmt(ms.get("max_24h")))
         st.caption(f"{ms.get('periodo', '')} · {ms.get('fonte', '')}")
 
+        # ── Diagnóstico técnico (sempre visível em expander) ──
+        with st.expander("🔧 Diagnóstico técnico"):
+            st.caption("Exchange cripto: binance → bybit → okx → kraken (fallback automático)")
+            st.caption(f"Timeout: 30s por exchange")
+            if tipo == "cripto":
+                tfs = data.get("direcao", {}).get("timeframes", {})
+                tf_ok = sum(1 for _, v in tfs.items() if isinstance(v, dict) and v.get("rsi") is not None)
+                st.caption(f"Timeframes cripto com dados: {tf_ok}/5")
+                if ms.get("fonte", "").startswith("ccxt/"):
+                    st.success(f"Conexão cripto OK via {ms['fonte']}")
+                elif ms.get("preco_atual") is None:
+                    st.warning("Cripto sem dados — possível bloqueio geográfico da Binance. Fallback ativado.")
+            else:
+                st.success("Conexão ações OK (yfinance)")
+
         # ── Direção ──
         st.subheader("🧭 Motor de Direção")
         direcao = data["direcao"]

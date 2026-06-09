@@ -3,6 +3,8 @@ from __future__ import annotations
 import ccxt
 import yfinance as yf
 
+_CRYPTO_EXCHANGES = ["binance", "bybit", "okx", "kraken"]
+
 
 def _safe_float(val) -> float | None:
     if val is None:
@@ -17,28 +19,33 @@ def _safe_float(val) -> float | None:
 
 
 def get_crypto_market_summary(symbol: str, exchange_name: str = "binance") -> dict:
-    try:
-        exchange_class = getattr(ccxt, exchange_name)
-        exchange = exchange_class({"enableRateLimit": True})
-        ticker = exchange.fetch_ticker(symbol)
+    exchanges_to_try = [exchange_name] + [e for e in _CRYPTO_EXCHANGES if e != exchange_name]
 
-        preco = _safe_float(ticker.get("last"))
-        pct = _safe_float(ticker.get("percentage"))
-        if pct is None:
-            open_p = _safe_float(ticker.get("open"))
-            if preco is not None and open_p is not None and open_p != 0:
-                pct = round((preco - open_p) / open_p * 100, 2)
+    for ex_name in exchanges_to_try:
+        try:
+            exchange_class = getattr(ccxt, ex_name)
+            exchange = exchange_class({"enableRateLimit": True, "timeout": 30000})
+            ticker = exchange.fetch_ticker(symbol)
 
-        return {
-            "preco_atual": round(preco, 2) if preco else None,
-            "variacao_24h_percent": pct,
-            "min_24h": round(_safe_float(ticker.get("low")), 2) if _safe_float(ticker.get("low")) else None,
-            "max_24h": round(_safe_float(ticker.get("high")), 2) if _safe_float(ticker.get("high")) else None,
-            "periodo": "24h",
-            "fonte": "ccxt",
-        }
-    except Exception:
-        return _empty_summary("24h", "ccxt")
+            preco = _safe_float(ticker.get("last"))
+            pct = _safe_float(ticker.get("percentage"))
+            if pct is None:
+                open_p = _safe_float(ticker.get("open"))
+                if preco is not None and open_p is not None and open_p != 0:
+                    pct = round((preco - open_p) / open_p * 100, 2)
+
+            return {
+                "preco_atual": round(preco, 2) if preco else None,
+                "variacao_24h_percent": pct,
+                "min_24h": round(_safe_float(ticker.get("low")), 2) if _safe_float(ticker.get("low")) else None,
+                "max_24h": round(_safe_float(ticker.get("high")), 2) if _safe_float(ticker.get("high")) else None,
+                "periodo": "24h",
+                "fonte": f"ccxt/{ex_name}",
+            }
+        except Exception:
+            continue
+
+    return _empty_summary("24h", "ccxt")
 
 
 def get_stock_market_summary(symbol: str) -> dict:
