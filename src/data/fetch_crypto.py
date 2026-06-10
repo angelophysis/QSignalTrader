@@ -6,7 +6,7 @@ import pandas as pd
 _CRYPTO_EXCHANGES = ["okx", "bybit", "kraken", "binance"]
 
 
-def _get_exchange(exchange_name: str = "binance"):
+def _get_exchange(exchange_name: str = "okx"):
     exchange_class = getattr(ccxt, exchange_name)
     return exchange_class({"enableRateLimit": True, "timeout": 8000})
 

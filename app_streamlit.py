@@ -135,7 +135,7 @@ with tab1:
 
         # ── Diagnóstico técnico (sempre visível em expander) ──
         with st.expander("🔧 Diagnóstico técnico"):
-            st.caption("Exchange cripto: binance → bybit → okx → kraken (fallback automático)")
+            st.caption("Exchange cripto: okx → bybit → kraken → binance (fallback automático)")
             st.caption(f"Timeout: 30s por exchange")
             if tipo == "cripto":
                 tfs = data.get("direcao", {}).get("timeframes", {})
