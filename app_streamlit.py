@@ -52,25 +52,25 @@ def _render_radar(data: dict, label: str):
     st.subheader(f"Radar {label}")
     st.caption(f"{data.get('total_aprovados', 0)} aprovados de "
                f"{data.get('total_analisados', 0)} analisados · "
-               f"{data.get('execucao_segundos', '?')}s · ")
+               f"{data.get('execucao_segundos', '?')}s")
     aprovados = data.get("aprovados", [])
     if not aprovados:
         st.info("Nenhum ativo encontrado com RSI na zona ideal neste momento.")
-        return
 
-    rows = []
-    for a in aprovados:
-        var = float(a.get("variacao_percentual", 0)) if a.get("variacao_percentual") else 0
-        rows.append({
-            "Ativo": a["symbol"],
-            "Preço": _fmt(a.get("preco_atual")),
-            "Var.": _fmt_pct(a.get("variacao_percentual")),
-            "RSI": a.get("rsi_principal"),
-            "Tendência": a.get("tendencia", "—"),
-            "Volatilidade": a.get("volatilidade", "—"),
-            "Decisão": a.get("decisao", "—"),
-        })
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    if aprovados:
+        rows = []
+        for a in aprovados:
+            var = float(a.get("variacao_percentual", 0)) if a.get("variacao_percentual") else 0
+            rows.append({
+                "Ativo": a["symbol"],
+                "Preço": _fmt(a.get("preco_atual")),
+                "Var.": _fmt_pct(a.get("variacao_percentual")),
+                "RSI": a.get("rsi_principal"),
+                "Tendência": a.get("tendencia", "—"),
+                "Volatilidade": a.get("volatilidade", "—"),
+                "Decisão": a.get("decisao", "—"),
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True)
 
     with st.expander("Ativos fora da faixa"):
         rej = data.get("rejeitados", [])
@@ -80,10 +80,13 @@ def _render_radar(data: dict, label: str):
         else:
             st.caption("Nenhum ativo rejeitado.")
 
-    with st.expander("Erros"):
+    with st.expander("Erros e diagnóstico"):
         errs = data.get("erros", [])
+        ec = data.get("error_counts", {})
+        if ec:
+            st.caption("**Erros por tipo:** " + " | ".join(f"{k}: {v}" for k, v in sorted(ec.items())))
         if errs:
-            st.dataframe([{"Ativo": e["symbol"], "Erro": e["erro"]} for e in errs],
+            st.dataframe([{"Ativo": e["symbol"], "Tipo": e.get("tipo_erro", "?"), "Erro": e.get("erro", "")[:80]} for e in errs],
                          use_container_width=True, hide_index=True)
         else:
             st.caption("Nenhum erro.")

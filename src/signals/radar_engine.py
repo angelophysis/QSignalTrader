@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.fetch_crypto import get_crypto_data
+from src.data.fetch_crypto import _get_exchange, _CRYPTO_EXCHANGES
 from src.data.yfinance_handler import YahooFinanceDataHandler
 from src.indicators.technicals import add_rsi
 from src.signals.rsi_entry_engine import classificar_rsi_entrada
@@ -13,7 +13,38 @@ from src.signals.rsi_entry_engine import classificar_rsi_entrada
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _CACHE: dict = {}
-_CACHE_TTL = 900  # 15 minutos
+_CACHE_TTL_SUCCESS = 900
+_CACHE_TTL_ERROR = 120
+
+_RETRY_PAUSE_S = 1.2
+_SYMBOL_PAUSE_S = 0.2
+
+_TRANSIENT_PATTERNS = (
+    "RequestTimeout", "RateLimitExceeded", "DDoSProtection",
+    "NetworkError", "ExchangeNotAvailable", "timed out",
+)
+
+
+def _is_transient(error_msg: str) -> bool:
+    for p in _TRANSIENT_PATTERNS:
+        if p.lower() in error_msg.lower():
+            return True
+    return False
+
+
+def _classify_error(e: Exception) -> str:
+    msg = str(e)
+    if "timeout" in msg.lower() or "timed out" in msg.lower():
+        return "timeout"
+    if "rate" in msg.lower() and ("limit" in msg.lower() or "exceeded" in msg.lower()):
+        return "rate_limit"
+    if "not found" in msg.lower() or "does not exist" in msg.lower() or "invalid symbol" in msg.lower():
+        return "par_indisponivel"
+    if "network" in msg.lower() or "connection" in msg.lower() or "dns" in msg.lower():
+        return "erro_rede"
+    if "ddos" in msg.lower():
+        return "rate_limit"
+    return "erro_desconhecido"
 
 
 def _normalizar_symbol(symbol: str) -> str:
@@ -85,24 +116,34 @@ def carregar_lista(tipo: str) -> list[str]:
     return symbols
 
 
-def _calcular_rsi_principal(symbol: str, tipo: str) -> float | None:
+def _calcular_rsi_principal(symbol: str, tipo: str, retry: bool = True) -> tuple[float | None, dict | None]:
     try:
         if tipo == "cripto":
-            df = get_crypto_data(symbol=symbol, timeframe="4h", limit=120)
+            df = _fetch_ohlcv_with_retry(symbol, "4h", 120, retry)
         else:
             dh = YahooFinanceDataHandler(auto_adjust=True)
             df = dh.fetch_ohlc(ticker=symbol, period="3mo", interval="1d")
 
-        if df.empty or len(df) < 20:
-            return None
+        if df is None or df.empty or len(df) < 20:
+            return None, {"tipo": "dados_insuficientes", "candles": len(df) if df is not None else 0}
 
         df = add_rsi(df)
         rsi_val = df["rsi"].iloc[-1]
         if pd.isna(rsi_val):
-            return None
-        return round(float(rsi_val), 1)
-    except Exception:
-        return None
+            return None, {"tipo": "rsi_indisponivel"}
+        return round(float(rsi_val), 1), None
+    except Exception as e:
+        err_type = _classify_error(e)
+        err_msg = str(e)[:120]
+        if retry and _is_transient(str(e)):
+            _time.sleep(_RETRY_PAUSE_S)
+            return _calcular_rsi_principal(symbol, tipo, retry=False)
+        return None, {"tipo": err_type, "mensagem": err_msg}
+
+
+def _fetch_ohlcv_with_retry(symbol: str, timeframe: str, limit: int, retry: bool):
+    from src.data.fetch_crypto import get_crypto_data
+    return get_crypto_data(symbol=symbol, timeframe=timeframe, limit=limit)
 
 
 def _enriquecer_aprovado(rsi_val: float, symbol: str, tipo: str) -> dict:
@@ -151,8 +192,9 @@ def executar_radar(tipo: str, force: bool = False) -> dict:
     cache_key = f"radar_{tipo}"
 
     if not force and cache_key in _CACHE:
-        cached_result, cached_at = _CACHE[cache_key]
-        if _time.time() - cached_at < _CACHE_TTL:
+        cached_result, cached_at, had_errors = _CACHE[cache_key]
+        ttl = _CACHE_TTL_ERROR if had_errors else _CACHE_TTL_SUCCESS
+        if _time.time() - cached_at < ttl:
             result = dict(cached_result)
             result["cache_hit"] = True
             return result
@@ -162,14 +204,27 @@ def executar_radar(tipo: str, force: bool = False) -> dict:
     aprovados = []
     rejeitados = []
     erros = []
+    error_counts: dict = {}
 
     rsi_min, rsi_max = 56, 66
 
-    for symbol in symbols:
+    for i, symbol in enumerate(symbols):
+        if i > 0:
+            _time.sleep(_SYMBOL_PAUSE_S)
+
         try:
-            rsi = _calcular_rsi_principal(symbol, tipo)
+            rsi, err_info = _calcular_rsi_principal(symbol, tipo)
             if rsi is None:
-                erros.append({"symbol": symbol, "erro": "Dados indisponíveis"})
+                entry = {"symbol": symbol}
+                if err_info:
+                    entry["erro"] = err_info.get("mensagem", str(err_info))
+                    entry["tipo_erro"] = err_info.get("tipo", "desconhecido")
+                    error_counts[err_info.get("tipo", "desconhecido")] = error_counts.get(err_info.get("tipo", "desconhecido"), 0) + 1
+                else:
+                    entry["erro"] = "Dados insuficientes"
+                    entry["tipo_erro"] = "dados_insuficientes"
+                    error_counts["dados_insuficientes"] = error_counts.get("dados_insuficientes", 0) + 1
+                erros.append(entry)
                 continue
 
             if rsi_min <= rsi <= rsi_max:
@@ -180,7 +235,9 @@ def executar_radar(tipo: str, force: bool = False) -> dict:
             else:
                 rejeitados.append({"symbol": symbol, "rsi_principal": rsi, "motivo": f"RSI acima de {rsi_max}"})
         except Exception as e:
-            erros.append({"symbol": symbol, "erro": str(e)})
+            err_type = _classify_error(e)
+            error_counts[err_type] = error_counts.get(err_type, 0) + 1
+            erros.append({"symbol": symbol, "erro": str(e)[:120], "tipo_erro": err_type})
 
     elapsed = round(_time.time() - start, 1)
     result = {
@@ -194,10 +251,12 @@ def executar_radar(tipo: str, force: bool = False) -> dict:
         "aprovados": aprovados,
         "rejeitados": rejeitados,
         "erros": erros,
+        "error_counts": error_counts,
         "execucao_segundos": elapsed,
         "cache_hit": False,
         "timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    _CACHE[cache_key] = (result, _time.time())
+    had_errors = len(erros) > len(symbols) * 0.25
+    _CACHE[cache_key] = (result, _time.time(), had_errors)
     return result

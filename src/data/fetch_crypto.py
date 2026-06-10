@@ -5,10 +5,14 @@ import pandas as pd
 
 _CRYPTO_EXCHANGES = ["okx", "bybit", "kraken", "binance"]
 
+_exchange_instances: dict = {}
+
 
 def _get_exchange(exchange_name: str = "okx"):
-    exchange_class = getattr(ccxt, exchange_name)
-    return exchange_class({"enableRateLimit": True, "timeout": 8000})
+    if exchange_name not in _exchange_instances:
+        exchange_class = getattr(ccxt, exchange_name)
+        _exchange_instances[exchange_name] = exchange_class({"enableRateLimit": True, "timeout": 8000})
+    return _exchange_instances[exchange_name]
 
 
 def get_crypto_data(
