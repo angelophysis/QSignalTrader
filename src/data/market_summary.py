@@ -3,7 +3,7 @@ from __future__ import annotations
 import ccxt
 import yfinance as yf
 
-_CRYPTO_EXCHANGES = ["binance", "bybit", "okx", "kraken"]
+_CRYPTO_EXCHANGES = ["okx", "bybit", "kraken", "binance"]
 
 
 def _safe_float(val) -> float | None:
@@ -18,13 +18,13 @@ def _safe_float(val) -> float | None:
         return None
 
 
-def get_crypto_market_summary(symbol: str, exchange_name: str = "binance") -> dict:
+def get_crypto_market_summary(symbol: str, exchange_name: str = "okx") -> dict:
     exchanges_to_try = [exchange_name] + [e for e in _CRYPTO_EXCHANGES if e != exchange_name]
 
     for ex_name in exchanges_to_try:
         try:
             exchange_class = getattr(ccxt, ex_name)
-            exchange = exchange_class({"enableRateLimit": True, "timeout": 30000})
+            exchange = exchange_class({"enableRateLimit": True, "timeout": 8000})
             ticker = exchange.fetch_ticker(symbol)
 
             preco = _safe_float(ticker.get("last"))

@@ -3,17 +3,17 @@ from __future__ import annotations
 import ccxt
 import pandas as pd
 
-_CRYPTO_EXCHANGES = ["binance", "bybit", "okx", "kraken"]
+_CRYPTO_EXCHANGES = ["okx", "bybit", "kraken", "binance"]
 
 
 def _get_exchange(exchange_name: str = "binance"):
     exchange_class = getattr(ccxt, exchange_name)
-    return exchange_class({"enableRateLimit": True, "timeout": 30000})
+    return exchange_class({"enableRateLimit": True, "timeout": 8000})
 
 
 def get_crypto_data(
     symbol: str = "BTC/USDT",
-    exchange_name: str = "binance",
+    exchange_name: str = "okx",
     timeframe: str = "1h",
     limit: int = 100,
 ) -> pd.DataFrame:
