@@ -5,6 +5,7 @@ Online deployment on Streamlit Community Cloud.
 import streamlit as st
 from src.signals.signal_engine import gerar_analise_completa
 from src.data.market_summary import get_market_summary
+from src.data.fetch_crypto import CRYPTO_TIMEOUT_MS, get_crypto_source_labels
 from src.signals.radar_engine import executar_radar
 from src.volatility.volatility_config import is_btc
 
@@ -25,8 +26,8 @@ def _cached_market(symbol: str, tipo: str) -> dict:
 
 
 @st.cache_data(ttl=900)
-def _cached_radar(tipo: str) -> dict:
-    return executar_radar(tipo, force=False)
+def _cached_radar(tipo: str, analise_completa: bool = False) -> dict:
+    return executar_radar(tipo, force=False, analise_completa=analise_completa)
 
 
 # ═══════════════════════════════════════════
@@ -60,12 +61,15 @@ def _render_radar(data: dict, label: str):
     if aprovados:
         rows = []
         for a in aprovados:
-            var = float(a.get("variacao_percentual", 0)) if a.get("variacao_percentual") else 0
             rows.append({
                 "Ativo": a["symbol"],
                 "Preço": _fmt(a.get("preco_atual")),
                 "Var.": _fmt_pct(a.get("variacao_percentual")),
                 "RSI": a.get("rsi_principal"),
+                "Fonte": "/".join(x for x in [a.get("exchange"), a.get("market_type")] if x),
+                "Símbolo": a.get("resolved_symbol", ""),
+                "Candles": a.get("candles", ""),
+                "Fallback": "Sim" if a.get("fallback_used") else "Não",
                 "Tendência": a.get("tendencia", "—"),
                 "Volatilidade": a.get("volatilidade", "—"),
                 "Decisão": a.get("decisao", "—"),
@@ -75,8 +79,18 @@ def _render_radar(data: dict, label: str):
     with st.expander("Ativos fora da faixa"):
         rej = data.get("rejeitados", [])
         if rej:
-            st.dataframe([{"Ativo": r["symbol"], "RSI": r["rsi_principal"], "Motivo": r["motivo"]} for r in rej],
-                         use_container_width=True, hide_index=True)
+            st.dataframe([
+                {
+                    "Ativo": r["symbol"],
+                    "RSI": r["rsi_principal"],
+                    "Motivo": r["motivo"],
+                    "Fonte": "/".join(x for x in [r.get("exchange"), r.get("market_type")] if x),
+                    "Símbolo": r.get("resolved_symbol", ""),
+                    "Candles": r.get("candles", ""),
+                    "Fallback": "Sim" if r.get("fallback_used") else "Não",
+                }
+                for r in rej
+            ], use_container_width=True, hide_index=True)
         else:
             st.caption("Nenhum ativo rejeitado.")
 
@@ -86,10 +100,53 @@ def _render_radar(data: dict, label: str):
         if ec:
             st.caption("**Erros por tipo:** " + " | ".join(f"{k}: {v}" for k, v in sorted(ec.items())))
         if errs:
-            st.dataframe([{"Ativo": e["symbol"], "Tipo": e.get("tipo_erro", "?"), "Erro": e.get("erro", "")[:80]} for e in errs],
-                         use_container_width=True, hide_index=True)
+            st.dataframe([
+                {
+                    "Ativo": e["symbol"],
+                    "Tipo": e.get("tipo_erro", "?"),
+                    "Erro": e.get("erro", "")[:120],
+                    "Fonte": "/".join(x for x in [e.get("exchange"), e.get("market_type")] if x),
+                    "Símbolo": e.get("resolved_symbol", ""),
+                    "Candles": e.get("candles", ""),
+                }
+                for e in errs
+            ], use_container_width=True, hide_index=True)
         else:
             st.caption("Nenhum erro.")
+
+        diag = data.get("diagnostico", {})
+        if diag:
+            st.caption("Ordem de fontes: " + " -> ".join(diag.get("source_order", [])))
+            st.caption(f"Timeout por fonte: {diag.get('timeout_ms', CRYPTO_TIMEOUT_MS) / 1000:.0f}s")
+            st.caption("Exchanges usadas: " + (", ".join(diag.get("exchanges_usadas", [])) or "nenhuma"))
+            st.caption("Market types usados: " + (", ".join(diag.get("market_types_usados", [])) or "nenhum"))
+
+            fallback_rows = diag.get("ativos_com_fallback", [])
+            if fallback_rows:
+                st.write("Ativos que usaram fallback")
+                st.dataframe([
+                    {
+                        "Ativo": r.get("symbol"),
+                        "Fonte": "/".join(x for x in [r.get("exchange"), r.get("market_type")] if x),
+                        "Símbolo": r.get("resolved_symbol", ""),
+                        "Candles": r.get("candles", ""),
+                    }
+                    for r in fallback_rows
+                ], use_container_width=True, hide_index=True)
+
+            resolved_rows = diag.get("simbolos_resolvidos", [])
+            if resolved_rows:
+                st.write("Símbolos resolvidos")
+                st.dataframe([
+                    {
+                        "Ativo": r.get("symbol"),
+                        "Fonte": "/".join(x for x in [r.get("exchange"), r.get("market_type")] if x),
+                        "Símbolo": r.get("resolved_symbol", ""),
+                        "Candles": r.get("candles", ""),
+                        "Fallback": "Sim" if r.get("fallback_used") else "Não",
+                    }
+                    for r in resolved_rows
+                ], use_container_width=True, hide_index=True)
 
 
 # ═══════════════════════════════════════════
@@ -138,16 +195,20 @@ with tab1:
 
         # ── Diagnóstico técnico (sempre visível em expander) ──
         with st.expander("🔧 Diagnóstico técnico"):
-            st.caption("Exchange cripto: okx → bybit → kraken → binance (fallback automático)")
-            st.caption(f"Timeout: 30s por exchange")
+            st.caption("Fontes cripto: " + " -> ".join(get_crypto_source_labels()))
+            st.caption(f"Timeout: {CRYPTO_TIMEOUT_MS / 1000:.0f}s por fonte")
             if tipo == "cripto":
                 tfs = data.get("direcao", {}).get("timeframes", {})
                 tf_ok = sum(1 for _, v in tfs.items() if isinstance(v, dict) and v.get("rsi") is not None)
                 st.caption(f"Timeframes cripto com dados: {tf_ok}/5")
                 if ms.get("fonte", "").startswith("ccxt/"):
                     st.success(f"Conexão cripto OK via {ms['fonte']}")
+                    if ms.get("resolved_symbol"):
+                        st.caption(f"Símbolo resolvido: {ms.get('resolved_symbol')}")
+                    if ms.get("fallback_used"):
+                        st.caption("Fallback usado para resolver esta cripto.")
                 elif ms.get("preco_atual") is None:
-                    st.warning("Cripto sem dados — possível bloqueio geográfico da Binance. Fallback ativado.")
+                    st.warning("Cripto sem dados. Verifique tentativas no diagnóstico.")
             else:
                 st.success("Conexão ações OK (yfinance)")
 
@@ -260,6 +321,7 @@ with tab2:
         st.subheader("Radar")
         st.caption("Filtra ativos com RSI na zona ideal (56-66)")
         force_radar = st.checkbox("Forçar atualização do radar")
+        full_radar = st.checkbox("Análise completa dos aprovados", value=False)
 
     st.subheader("Radar de Oportunidades")
     st.caption("RSI 4h (cripto) / RSI 1D (ações) entre 56 e 66")
@@ -270,7 +332,7 @@ with tab2:
             st.cache_data.clear()
         with st.spinner("Executando Radar Cripto..."):
             try:
-                r = _cached_radar("cripto")
+                r = _cached_radar("cripto", full_radar)
                 _render_radar(r, "Cripto")
             except Exception as e:
                 st.error(f"Erro: {e}")
@@ -280,7 +342,7 @@ with tab2:
             st.cache_data.clear()
         with st.spinner("Executando Radar Ações..."):
             try:
-                r = _cached_radar("acoes")
+                r = _cached_radar("acoes", full_radar)
                 _render_radar(r, "Ações")
             except Exception as e:
                 st.error(f"Erro: {e}")

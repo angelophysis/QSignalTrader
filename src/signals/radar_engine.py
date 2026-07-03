@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.data.fetch_crypto import _get_exchange, _CRYPTO_EXCHANGES
+from src.data.fetch_crypto import (
+    CACHE_VERSION,
+    CRYPTO_TIMEOUT_MS,
+    fetch_crypto_data_with_metadata,
+    get_crypto_source_labels,
+)
 from src.data.yfinance_handler import YahooFinanceDataHandler
 from src.indicators.technicals import add_rsi
 from src.signals.rsi_entry_engine import classificar_rsi_entrada
@@ -38,7 +43,14 @@ def _classify_error(e: Exception) -> str:
         return "timeout"
     if "rate" in msg.lower() and ("limit" in msg.lower() or "exceeded" in msg.lower()):
         return "rate_limit"
-    if "not found" in msg.lower() or "does not exist" in msg.lower() or "invalid symbol" in msg.lower():
+    if (
+        "not found" in msg.lower()
+        or "does not exist" in msg.lower()
+        or "invalid symbol" in msg.lower()
+        or "bad symbol" in msg.lower()
+        or "symbolnotavailable" in msg.lower()
+        or "indisponivel" in msg.lower()
+    ):
         return "par_indisponivel"
     if "network" in msg.lower() or "connection" in msg.lower() or "dns" in msg.lower():
         return "erro_rede"
@@ -119,43 +131,71 @@ def carregar_lista(tipo: str) -> list[str]:
 def _calcular_rsi_principal(symbol: str, tipo: str, retry: bool = True) -> tuple[float | None, dict | None]:
     try:
         if tipo == "cripto":
-            df = _fetch_ohlcv_with_retry(symbol, "4h", 120, retry)
+            fetch_result = fetch_crypto_data_with_metadata(
+                symbol=symbol, timeframe="4h", limit=120
+            )
+            df = fetch_result.df
+            meta = {
+                "tipo": "ok",
+                "exchange": fetch_result.exchange,
+                "market_type": fetch_result.market_type,
+                "resolved_symbol": fetch_result.resolved_symbol,
+                "candles": fetch_result.candles,
+                "fallback_used": fetch_result.fallback_used,
+                "attempts": fetch_result.attempts,
+            }
         else:
             dh = YahooFinanceDataHandler(auto_adjust=True)
             df = dh.fetch_ohlc(ticker=symbol, period="3mo", interval="1d")
+            meta = {"tipo": "ok", "candles": len(df)}
 
         if df is None or df.empty or len(df) < 20:
-            return None, {"tipo": "dados_insuficientes", "candles": len(df) if df is not None else 0}
+            meta["tipo"] = "dados_insuficientes"
+            meta["candles"] = len(df) if df is not None else 0
+            return None, meta
 
         df = add_rsi(df)
         rsi_val = df["rsi"].iloc[-1]
         if pd.isna(rsi_val):
-            return None, {"tipo": "rsi_indisponivel"}
-        return round(float(rsi_val), 1), None
+            meta["tipo"] = "rsi_indisponivel"
+            return None, meta
+        return round(float(rsi_val), 1), meta
     except Exception as e:
         err_type = _classify_error(e)
         err_msg = str(e)[:120]
         if retry and _is_transient(str(e)):
             _time.sleep(_RETRY_PAUSE_S)
             return _calcular_rsi_principal(symbol, tipo, retry=False)
-        return None, {"tipo": err_type, "mensagem": err_msg}
+        return None, {
+            "tipo": err_type,
+            "mensagem": err_msg,
+            "attempts": getattr(e, "attempts", []),
+        }
 
 
-def _fetch_ohlcv_with_retry(symbol: str, timeframe: str, limit: int, retry: bool):
-    from src.data.fetch_crypto import get_crypto_data
-    return get_crypto_data(symbol=symbol, timeframe=timeframe, limit=limit)
-
-
-def _enriquecer_aprovado(rsi_val: float, symbol: str, tipo: str) -> dict:
+def _enriquecer_aprovado(
+    rsi_val: float,
+    symbol: str,
+    tipo: str,
+    meta: dict | None = None,
+    analise_completa: bool = False,
+) -> dict:
+    meta = meta or {}
     try:
-        from src.signals.signal_engine import gerar_analise_completa
         from src.data.market_summary import get_market_summary
 
-        analysis = gerar_analise_completa(symbol)
         ms = get_market_summary(symbol, tipo)
     except Exception:
-        analysis = None
         ms = {}
+
+    analysis = None
+    if analise_completa:
+        try:
+            from src.signals.signal_engine import gerar_analise_completa
+
+            analysis = gerar_analise_completa(symbol)
+        except Exception:
+            analysis = None
 
     rsi_class = classificar_rsi_entrada(rsi_val)
 
@@ -184,12 +224,60 @@ def _enriquecer_aprovado(rsi_val: float, symbol: str, tipo: str) -> dict:
         "tendencia": tendencia,
         "volatilidade": vol_msg,
         "decisao": dec_msg,
+        "exchange": meta.get("exchange") or ms.get("exchange"),
+        "market_type": meta.get("market_type") or ms.get("market_type"),
+        "resolved_symbol": meta.get("resolved_symbol") or ms.get("resolved_symbol"),
+        "candles": meta.get("candles"),
+        "fallback_used": bool(meta.get("fallback_used") or ms.get("fallback_used")),
+        "attempts": meta.get("attempts", []),
     }
 
 
-def executar_radar(tipo: str, force: bool = False) -> dict:
+def _erro_entry(symbol: str, err_info: dict | None) -> dict:
+    err_info = err_info or {"tipo": "desconhecido"}
+    return {
+        "symbol": symbol,
+        "erro": err_info.get("mensagem", "Dados indisponiveis"),
+        "tipo_erro": err_info.get("tipo", "desconhecido"),
+        "exchange": err_info.get("exchange"),
+        "market_type": err_info.get("market_type"),
+        "resolved_symbol": err_info.get("resolved_symbol"),
+        "candles": err_info.get("candles"),
+        "fallback_used": bool(err_info.get("fallback_used")),
+        "attempts": err_info.get("attempts", []),
+    }
+
+
+def _diagnostico_fontes(rows: list[dict]) -> dict:
+    exchanges = sorted({r.get("exchange") for r in rows if r.get("exchange")})
+    market_types = sorted({r.get("market_type") for r in rows if r.get("market_type")})
+    fallbacks = [r for r in rows if r.get("fallback_used")]
+    resolved = [
+        {
+            "symbol": r.get("symbol"),
+            "exchange": r.get("exchange"),
+            "market_type": r.get("market_type"),
+            "resolved_symbol": r.get("resolved_symbol"),
+            "candles": r.get("candles"),
+            "fallback_used": r.get("fallback_used"),
+        }
+        for r in rows
+        if r.get("exchange") or r.get("resolved_symbol")
+    ]
+    return {
+        "cache_version": CACHE_VERSION,
+        "timeout_ms": CRYPTO_TIMEOUT_MS,
+        "source_order": get_crypto_source_labels(),
+        "exchanges_usadas": exchanges,
+        "market_types_usados": market_types,
+        "ativos_com_fallback": fallbacks,
+        "simbolos_resolvidos": resolved,
+    }
+
+
+def executar_radar(tipo: str, force: bool = False, analise_completa: bool = False) -> dict:
     tf_key = "4h" if tipo == "cripto" else "1D"
-    cache_key = f"radar_{tipo}"
+    cache_key = f"{CACHE_VERSION}:radar_{tipo}:full={int(analise_completa)}"
 
     if not force and cache_key in _CACHE:
         cached_result, cached_at, had_errors = _CACHE[cache_key]
@@ -213,33 +301,49 @@ def executar_radar(tipo: str, force: bool = False) -> dict:
             _time.sleep(_SYMBOL_PAUSE_S)
 
         try:
-            rsi, err_info = _calcular_rsi_principal(symbol, tipo)
+            rsi, meta = _calcular_rsi_principal(symbol, tipo)
             if rsi is None:
-                entry = {"symbol": symbol}
-                if err_info:
-                    entry["erro"] = err_info.get("mensagem", str(err_info))
-                    entry["tipo_erro"] = err_info.get("tipo", "desconhecido")
-                    error_counts[err_info.get("tipo", "desconhecido")] = error_counts.get(err_info.get("tipo", "desconhecido"), 0) + 1
-                else:
-                    entry["erro"] = "Dados insuficientes"
-                    entry["tipo_erro"] = "dados_insuficientes"
-                    error_counts["dados_insuficientes"] = error_counts.get("dados_insuficientes", 0) + 1
+                entry = _erro_entry(symbol, meta)
+                err_type = entry["tipo_erro"]
+                error_counts[err_type] = error_counts.get(err_type, 0) + 1
                 erros.append(entry)
                 continue
 
             if rsi_min <= rsi <= rsi_max:
-                enriched = _enriquecer_aprovado(rsi, symbol, tipo)
+                enriched = _enriquecer_aprovado(
+                    rsi,
+                    symbol,
+                    tipo,
+                    meta=meta,
+                    analise_completa=analise_completa,
+                )
                 aprovados.append(enriched)
             elif rsi < rsi_min:
-                rejeitados.append({"symbol": symbol, "rsi_principal": rsi, "motivo": f"RSI abaixo de {rsi_min}"})
+                rejeitados.append({
+                    "symbol": symbol,
+                    "rsi_principal": rsi,
+                    "motivo": f"RSI abaixo de {rsi_min}",
+                    **(meta or {}),
+                })
             else:
-                rejeitados.append({"symbol": symbol, "rsi_principal": rsi, "motivo": f"RSI acima de {rsi_max}"})
+                rejeitados.append({
+                    "symbol": symbol,
+                    "rsi_principal": rsi,
+                    "motivo": f"RSI acima de {rsi_max}",
+                    **(meta or {}),
+                })
         except Exception as e:
             err_type = _classify_error(e)
             error_counts[err_type] = error_counts.get(err_type, 0) + 1
-            erros.append({"symbol": symbol, "erro": str(e)[:120], "tipo_erro": err_type})
+            erros.append({
+                "symbol": symbol,
+                "erro": str(e)[:120],
+                "tipo_erro": err_type,
+                "attempts": getattr(e, "attempts", []),
+            })
 
     elapsed = round(_time.time() - start, 1)
+    all_rows = aprovados + rejeitados + erros
     result = {
         "tipo": tipo,
         "criterio": f"RSI {tf_key} entre {rsi_min} e {rsi_max}",
@@ -252,6 +356,8 @@ def executar_radar(tipo: str, force: bool = False) -> dict:
         "rejeitados": rejeitados,
         "erros": erros,
         "error_counts": error_counts,
+        "diagnostico": _diagnostico_fontes(all_rows) if tipo == "cripto" else {},
+        "analise_completa": analise_completa,
         "execucao_segundos": elapsed,
         "cache_hit": False,
         "timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
