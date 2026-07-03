@@ -88,6 +88,12 @@ st.markdown("""
     text-transform: uppercase;
     letter-spacing: 0.4px;
 }
+.v2-plan-note {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.58);
+    line-height: 1.35;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,6 +183,129 @@ def _score_card(label: str, score_val, cls_label: str | None = None) -> None:
     )
 
 
+def _plan_card(title: str, value: str, note: str = "", tone: str = "neutral") -> None:
+    note_html = f'<div class="v2-plan-note">{note}</div>' if note else ""
+    st.markdown(
+        f'<div class="v2-card {tone}"><div class="v2-card-title">{title}</div>'
+        f'<div class="v2-card-value">{value}</div>{note_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _trigger_desc(strat, trigger_val, momentum, location, risk, ticker) -> tuple[str, str]:
+    strat_name = strat.get("strategy", "")
+    if isinstance(trigger_val, (int, float)):
+        return (_fmt_price(ticker, trigger_val),
+                "Confirmação desejável: fechamento acima do gatilho com volume e momentum.")
+    if strat_name in ("NO_TRADE", "DEFENSIVE_MODE"):
+        return ("Nenhum gatilho ativo", "Estratégia atual não favorece entrada. Aguardar mudança de cenário.")
+    m = momentum.get("momentum_score", 0)
+    l = location.get("location_score", 0)
+    r = risk.get("risk_score", 0)
+    reasons = []
+    if isinstance(m, (int, float)) and m < 50:
+        reasons.append("momentum fraco")
+    if isinstance(l, (int, float)) and l < 50:
+        reasons.append("localização desfavorável")
+    if isinstance(r, (int, float)) and r < 50:
+        reasons.append("risco elevado")
+    if reasons:
+        return ("Nenhum gatilho ativo", f"Motivo: {', '.join(reasons)}.")
+    return ("Nenhum gatilho ativo", "Sinais insuficientes para definir um gatilho operacional.")
+
+
+def _invalidation_desc(action_with, inval_val, ticker) -> tuple[str, str]:
+    if isinstance(inval_val, (int, float)):
+        desc = "Perda desse nível enfraquece a leitura atual. "
+        if action_with == "MANTER_COM_CAUTELA":
+            desc += "Para quem já está posicionado, serve como alerta para reavaliar."
+        elif action_with == "REDUZIR":
+            desc += "Se perdido, a leitura favorece redução de exposição."
+        elif action_with == "SAIR":
+            desc += "Se perdido, a leitura favorece saída."
+        elif action_with == "MANTER":
+            desc += "Enquanto preservado, a estrutura principal segue válida."
+        return (_fmt_price(ticker, inval_val), desc)
+    return ("Nenhuma invalidação definida", "O sistema não encontrou suporte técnico confiável para invalidação.")
+
+
+def _no_position_desc(action: str) -> tuple[str, str]:
+    m = {
+        "COMPRAR_FORTE": ("Comprar forte", "Leitura favorável para entrada, respeitando gestão de risco."),
+        "COMPRAR_PARCIAL": ("Comprar parcial", "Entrada parcial pode fazer sentido, evitando alocação total de uma vez."),
+        "AGUARDAR_GATILHO": ("Aguardar gatilho", "Aguardar confirmação técnica antes de entrar."),
+        "OBSERVAR": ("Observar", "Ativo merece acompanhamento, mas ainda sem entrada clara."),
+        "EVITAR": ("Evitar", "Não há entrada técnica clara no momento."),
+    }
+    label, desc = m.get(action, (_h(action), "Sem orientação operacional definida."))
+    return (label, desc)
+
+
+def _with_position_desc(action: str) -> tuple[str, str]:
+    m = {
+        "AUMENTAR": ("Aumentar", "Leitura favorece aumento gradual, desde que risco continue controlado."),
+        "MANTER": ("Manter", "Posição pode ser mantida enquanto a estrutura técnica seguir válida."),
+        "MANTER_COM_CAUTELA": ("Manter com cautela", "Manter, mas acompanhar invalidação e enfraquecimento do momentum."),
+        "REDUZIR": ("Reduzir", "Leitura sugere reduzir exposição para controlar risco."),
+        "SAIR": ("Sair", "Leitura sugere zerar ou sair da posição."),
+    }
+    label, desc = m.get(action, (_h(action), "Sem orientação operacional definida."))
+    return (label, desc)
+
+
+def _build_operational_summary(strategy, momentum, location, risk, qsignal) -> str:
+    sn = strategy.get("strategy", "")
+    mn = momentum.get("momentum_score", 0)
+    qs = qsignal.get("qsignal_stock_score", 0)
+    if sn == "NO_TRADE":
+        if isinstance(mn, (int, float)) and mn < 50:
+            return "O sistema não encontrou confirmação suficiente para nova entrada. O momentum ainda está fraco, por isso a leitura sem posição favorece evitar. Para quem já está posicionado, a orientação é acompanhar a invalidação e manter cautela."
+        return "A ação tem estrutura razoável, mas o sistema não encontrou confirmação suficiente para entrada. Aguardar melhora dos sinais técnicos."
+    if sn in ("TREND_CONTINUATION", "PULLBACK_BUY"):
+        return "A leitura favorece entrada, pois o conjunto de tendência, localização e risco está aceitável. Ainda assim, o ideal é respeitar o nível de invalidação indicado."
+    if sn in ("BREAKOUT_CONFIRMATION", "BREAKOUT_SETUP"):
+        return "A leitura ainda depende de confirmação do breakout. O ativo merece acompanhamento, mas a entrada fica condicionada ao gatilho indicado."
+    if sn == "RECOVERY_WATCH":
+        return "Recuperação em andamento. A leitura é cautelosa porque ainda não há tendência confirmada. Tamanho reduzido e atenção ao gatilho são recomendados."
+    if sn == "DEFENSIVE_MODE":
+        return "Cenário desfavorável para compras. A leitura favorece proteger capital e aguardar condições melhores."
+    return "A leitura operacional depende da confirmação dos sinais técnicos. Acompanhar gatilho e invalidação."
+
+
+def _render_operational_plan(analysis: dict, ticker: str) -> None:
+    strategy = analysis.get("strategy") or {}
+    momentum = analysis.get("momentum") or {}
+    location = analysis.get("location") or {}
+    risk = analysis.get("risk") or {}
+    qs = analysis.get("qsignal_score") or {}
+
+    trigger_val = strategy.get("trigger_level")
+    inval_val = strategy.get("invalidation_level")
+    act_no = strategy.get("action_without_position", "")
+    act_with = strategy.get("action_with_position", "")
+
+    trig_label, trig_note = _trigger_desc(strategy, trigger_val, momentum, location, risk, ticker)
+    inv_label, inv_note = _invalidation_desc(act_with, inval_val, ticker)
+    np_label, np_note = _no_position_desc(act_no)
+    wp_label, wp_note = _with_position_desc(act_with)
+
+    st.markdown('<div class="v2-section">Plano Operacional</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        _plan_card("Gatilho", trig_label, trig_note)
+    with c2:
+        _plan_card("Invalidação", inv_label, inv_note)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        _plan_card("Sem posição", np_label, np_note, _action_tone(act_no))
+    with c2:
+        _plan_card("Com posição", wp_label, wp_note, _action_tone(act_with))
+
+    summary = _build_operational_summary(strategy, momentum, location, risk, qs)
+    st.markdown(f'<div class="v2-summary-box">{summary}</div>', unsafe_allow_html=True)
+
+
 # ═══════════════════════ Render Analysis ═══════════════════════
 def _render_analysis(ticker):
     try:
@@ -216,11 +345,9 @@ def _render_analysis(ticker):
     with c1:
         _card("Confiança", _h(regime.get("confidence")))
     with c2:
-        act_no = strategy.get("action_without_position", "—")
-        _card("Sem posição", _h(act_no), _action_tone(act_no))
+        _card("Gatilho", _fmt_price(ticker, strategy.get("trigger_level")) if isinstance(strategy.get("trigger_level"), (int, float)) else "—")
     with c3:
-        act_with = strategy.get("action_with_position", "—")
-        _card("Com posição", _h(act_with), _action_tone(act_with))
+        _card("Invalidação", _fmt_price(ticker, strategy.get("invalidation_level")) if isinstance(strategy.get("invalidation_level"), (int, float)) else "—")
 
     # ── Componentes do Score ──
     st.markdown('<div class="v2-section">Componentes do Score</div>', unsafe_allow_html=True)
@@ -266,18 +393,7 @@ def _render_analysis(ticker):
             st.caption("Níveis insuficientes para resistências.")
 
     # ── Plano operacional ──
-    trigger_val = strategy.get("trigger_level")
-    inval_val = strategy.get("invalidation_level")
-    main_reason = strategy.get("main_reason", "")
-    if trigger_val or inval_val or main_reason:
-        st.markdown('<div class="v2-section">Plano Operacional</div>', unsafe_allow_html=True)
-        c1, c2 = st.columns(2)
-        with c1:
-            _card("Gatilho", f"{trigger_val:.2f}" if isinstance(trigger_val, (int, float)) else "—")
-        with c2:
-            _card("Invalidação", f"{inval_val:.2f}" if isinstance(inval_val, (int, float)) else "—")
-        if main_reason:
-            st.caption(main_reason)
+    _render_operational_plan(analysis, ticker)
 
     # ── Leitura ──
     if formatted:
