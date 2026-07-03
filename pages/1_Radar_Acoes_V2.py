@@ -76,66 +76,79 @@ if run:
             if "error" in analysis:
                 st.error(analysis["error"])
             else:
+                # ── Top summary cards ──
+                qs = analysis.get("qsignal_score", {})
+                regime = analysis.get("regime", {})
+                strategy = analysis.get("strategy", {})
+                trend = analysis.get("trend", {})
+                location = analysis.get("location", {})
+                risk = analysis.get("risk", {})
+                rs = analysis.get("relative_strength", {})
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Regime", regime.get("regime", "—"))
+                c2.metric("Estratégia", strategy.get("strategy", "—"))
+                c3.metric("QSignalScore", f"{qs.get('qsignal_stock_score', '—')}/100")
+
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Preço", f"R$ {analysis['preco_atual']:.2f}" if analysis.get("preco_atual") else "—")
-                c2.metric("RadarLiteScore", f"{analysis.get('radar_lite_score', '—')}/100")
-                c3.metric("Status", analysis.get("status", "—"))
-                c4.metric("Modo", ", ".join(analysis.get("radar_modes", [])) or "—")
+                c2.metric("Confiança", regime.get("confidence", "—"))
+                c3.metric("Sem posição", strategy.get("action_without_position", "—"))
+                c4.metric("Com posição", strategy.get("action_with_position", "—"))
 
-                mom = analysis.get("momentum", {})
-                st.subheader("Momentum")
-                c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("Score", f"{mom.get('momentum_score', '—')}/100")
-                c2.metric("Classificação", mom.get("classification", "—"))
-                c3.metric("RSI", f"{mom.get('rsi', '—')}")
-                c4.metric("RSI Δ3", f"{mom.get('rsi_delta_3', '—')}")
-                c5.metric("ROC10", f"{mom.get('roc_10', '—')}%")
+                # ── Score components ──
+                st.subheader("Componentes do Score")
+                comps = qs.get("component_scores", {})
+                c1, c2, c3, c4, c5, c6 = st.columns(6)
+                c1.metric("Trend", f"{trend.get('trend_score', '—')}", delta=trend.get("classification", ""))
+                c2.metric("Momentum", f"{analysis['momentum'].get('momentum_score', '—')}", delta=analysis["momentum"].get("classification", ""))
+                c3.metric("Location", f"{location.get('location_score', '—')}", delta=location.get("classification", ""))
+                c4.metric("RS", f"{rs.get('relative_strength_score', '—')}", delta=rs.get("classification", ""))
+                c5.metric("Risk", f"{risk.get('risk_score', '—')}", delta=risk.get("classification", ""))
+                c6.metric("Qualidade", f"{comps.get('data_quality', '—')}")
 
-                # Suportes
-                st.subheader("Suportes")
-                supports = analysis.get("supports", [])
-                if supports:
-                    sup_rows = []
-                    for s in supports:
-                        sup_rows.append({
-                            "Nível": s.get("label", "—"),
-                            "Preço": f"{s['price']:.2f}",
-                            "Força": f"{s.get('strength', '—')}/100",
-                            "Distância": f"{s.get('distance_pct', 0):.1f}%",
-                            "Fontes": ", ".join(s.get("sources", [])[:4]),
-                        })
-                    st.dataframe(sup_rows, use_container_width=True, hide_index=True)
-                else:
-                    st.caption("Nenhum suporte encontrado.")
+                # ── S/R ──
+                st.subheader("Suportes & Resistências")
+                c1, c2 = st.columns(2)
+                with c1:
+                    supports = analysis.get("supports", [])
+                    if supports:
+                        st.caption("**Suportes**")
+                        st.dataframe([{"Nível": s.get("label"), "Preço": f"{s['price']:.2f}",
+                                        "Força": f"{s.get('strength', '—')}/100", "Dist": f"{s.get('distance_pct', 0):.1f}%"}
+                                       for s in supports], use_container_width=True, hide_index=True)
+                with c2:
+                    resistances = analysis.get("resistances", [])
+                    if resistances:
+                        st.caption("**Resistências**")
+                        st.dataframe([{"Nível": r.get("label"), "Preço": f"{r['price']:.2f}",
+                                        "Força": f"{r.get('strength', '—')}/100", "Dist": f"{r.get('distance_pct', 0):.1f}%"}
+                                       for r in resistances], use_container_width=True, hide_index=True)
 
-                # Resistências
-                st.subheader("Resistências")
-                resistances = analysis.get("resistances", [])
-                if resistances:
-                    res_rows = []
-                    for r in resistances:
-                        res_rows.append({
-                            "Nível": r.get("label", "—"),
-                            "Preço": f"{r['price']:.2f}",
-                            "Força": f"{r.get('strength', '—')}/100",
-                            "Distância": f"{r.get('distance_pct', 0):.1f}%",
-                            "Fontes": ", ".join(r.get("sources", [])[:4]),
-                        })
-                    st.dataframe(res_rows, use_container_width=True, hide_index=True)
-                else:
-                    st.caption("Nenhuma resistência encontrada.")
+                # ── Trigger / Invalidation ──
+                if strategy.get("trigger_level") or strategy.get("invalidation_level"):
+                    c1, c2 = st.columns(2)
+                    c1.metric("Gatilho", f"{strategy['trigger_level']:.2f}" if strategy.get("trigger_level") else "—")
+                    c2.metric("Invalidação", f"{strategy['invalidation_level']:.2f}" if strategy.get("invalidation_level") else "—")
 
-                # Leitura
-                st.subheader("Leitura")
-                st.info(analysis.get("leitura", "—"))
+                # ── Formatted output ──
+                formatted = analysis.get("formatted", {})
+                if formatted:
+                    st.subheader("Leitura")
+                    st.info(formatted.get("summary", "—"))
+                    st.caption(formatted.get("operational_plan", ""))
 
-                # Reasons / Warnings
+                # ── Reasons / Warnings ──
                 c1, c2 = st.columns(2)
                 with c1:
                     st.caption("**Motivos a favor**")
-                    for r in analysis.get("reasons", []):
+                    pts = formatted.get("bullish_points", analysis.get("reasons", []))
+                    for r in pts[:6]:
                         st.caption(f"✅ {r}")
                 with c2:
                     st.caption("**Atenções**")
+                    pts2 = formatted.get("bearish_points", analysis.get("warnings", []))
+                    for w in pts2[:6]:
+                        st.caption(f"⚠️ {w}")
                     for w in analysis.get("warnings", []):
                         st.caption(f"⚠️ {w}")

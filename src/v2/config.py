@@ -51,3 +51,56 @@ STATUS_THRESHOLDS = {
     (40, 59): "MONITORAR_FRACO",
     (0, 39): "IGNORAR",
 }
+
+QSIGNAL_WEIGHTS = {
+    "trend": 0.30,
+    "momentum": 0.25,
+    "location": 0.20,
+    "relative_strength": 0.10,
+    "risk": 0.10,
+    "data_quality": 0.05,
+}
+
+QSIGNAL_CLASS_MAP = [(85, "EXCELENTE"), (70, "BOM"), (55, "OBSERVAVEL"), (40, "FRACO"), (0, "RUIM")]
+
+TREND_STRONG = 80
+TREND_HEALTHY = 60
+MOMENTUM_STRONG = 80
+MOMENTUM_FAVORABLE = 60
+LOCATION_GOOD = 70
+RISK_ACCEPTABLE = 60
+RS_GOOD = 60
+
+EMA_SHORT = 21
+EMA_MEDIUM = 50
+EMA_LONG = 200
+
+NEAR_SUPPORT_PCT = 3.0
+NEAR_RESISTANCE_PCT = 3.0
+MIN_REWARD_RISK_GOOD = 2.0
+MIN_REWARD_RISK_ACCEPTABLE = 1.3
+
+REGIME_LABELS = {
+    "BULL_FORTE": "Bull Forte",
+    "BULL_SAUDAVEL": "Bull Saudável",
+    "PULLBACK_DE_ALTA": "Pullback de Alta",
+    "BREAKOUT_SETUP": "Breakout Setup",
+    "BREAKOUT_CONFIRMADO": "Breakout Confirmado",
+    "LATERALIZACAO": "Lateralização",
+    "RECUPERACAO": "Recuperação",
+    "DISTRIBUICAO": "Distribuição",
+    "BEAR_FORTE": "Bear Forte",
+    "INDEFINIDO": "Indefinido",
+}
+
+STRATEGY_LABELS = {
+    "TREND_CONTINUATION": "Continuação de Tendência",
+    "PULLBACK_BUY": "Compra em Pullback",
+    "BREAKOUT_CONFIRMATION": "Confirmação de Breakout",
+    "RECOVERY_WATCH": "Observar Recuperação",
+    "DEFENSIVE_MODE": "Modo Defensivo",
+    "NO_TRADE": "Fora / Aguardar",
+}
+
+ACTION_NO_POSITION = ["COMPRAR_PARCIAL", "AGUARDAR_GATILHO", "OBSERVAR", "EVITAR"]
+ACTION_WITH_POSITION = ["AUMENTAR", "MANTER", "MANTER_COM_CAUTELA", "REDUZIR", "SAIR"]
