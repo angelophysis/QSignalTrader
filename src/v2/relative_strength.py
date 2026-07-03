@@ -15,10 +15,32 @@ def _safe(val):
     return None
 
 
-def _get_benchmark(ticker: str) -> str | None:
-    if ticker.endswith(".SA"): return "^BVSP"
-    if ticker.isalpha() and len(ticker) <= 5: return "SPY"
-    return None
+def _get_benchmark(ticker: str) -> str:
+    return "^GSPC"
+
+
+_FALLBACK_BENCHMARKS = ["SPY"]
+
+
+def _fetch_benchmark(name: str) -> tuple:
+    dh = YahooFinanceDataHandler(auto_adjust=True)
+    for bm in [name] + _FALLBACK_BENCHMARKS:
+        if bm == name:
+            continue
+        try:
+            df = dh.fetch_ohlc(ticker=bm, period="1y", interval="1d")
+            if df is not None and not df.empty and len(df) >= 21:
+                return df, bm
+        except Exception:
+            continue
+    # Try original name too
+    try:
+        df = dh.fetch_ohlc(ticker=name, period="1y", interval="1d")
+        if df is not None and not df.empty and len(df) >= 21:
+            return df, name
+    except Exception:
+        pass
+    return None, None
 
 
 def calculate_relative_strength_score(stock_df, benchmark_df=None, ticker: str | None = None) -> dict:
@@ -27,14 +49,12 @@ def calculate_relative_strength_score(stock_df, benchmark_df=None, ticker: str |
                 "reasons": [], "warnings": ["Dados insuficientes para RS"]}
 
     bench_df = benchmark_df
-    bench_name = _get_benchmark(ticker) if ticker else None
+    bench_name = "^GSPC"
 
-    if bench_df is None and bench_name:
-        try:
-            dh = YahooFinanceDataHandler(auto_adjust=True)
-            bench_df = dh.fetch_ohlc(ticker=bench_name, period="1y", interval="1d")
-        except Exception:
-            bench_df = None
+    if bench_df is None:
+        bench_df, actual_bench = _fetch_benchmark(bench_name)
+        if actual_bench:
+            bench_name = actual_bench
 
     stock_close = stock_df["close"]
     stock_ret20 = _safe((stock_close.iloc[-1] / stock_close.iloc[-21] - 1) * 100) if len(stock_close) >= 21 else None

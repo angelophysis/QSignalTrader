@@ -237,41 +237,63 @@ def run_stock_radar_v2(
     min_score: float = DEFAULT_MIN_SCORE,
     mode_filter: str | None = None,
     max_tickers: int = DEFAULT_MAX_TICKERS,
-) -> pd.DataFrame:
+) -> dict:
     dh = YahooFinanceDataHandler(auto_adjust=True)
-    results = []
+    all_processed = []
+    errors = []
+    loaded = len(tickers)
+    processed = 0
 
     for ticker in tickers:
         try:
             df = dh.fetch_ohlc(ticker=ticker, period=period, interval="1d")
             indicators = calculate_radar_lite_indicators(df)
             score_data = calculate_radar_lite_score(indicators)
+            processed += 1
 
-            if score_data["radar_lite_score"] >= min_score:
-                if mode_filter and mode_filter not in score_data.get("radar_modes", []):
-                    continue
+            row = {
+                "Ticker": ticker,
+                "Preco": indicators.get("close"),
+                "Status": score_data["status"],
+                "RadarLiteScore": score_data["radar_lite_score"],
+                "Modos": ", ".join(score_data.get("radar_modes", [])),
+                "RSI": indicators.get("rsi"),
+                "RSI_Delta_3": indicators.get("rsi_delta_3"),
+                "ROC_10": indicators.get("roc_10"),
+                "ROC_20": indicators.get("roc_20"),
+                "Preco_EMA50": "✅" if indicators.get("price_above_ema50") else "❌",
+                "EMA21_EMA50": "✅" if indicators.get("ema21_above_ema50") else "❌",
+                "Dist_EMA21_Pct": indicators.get("dist_ema21_pct"),
+                "Vol_Rel": indicators.get("vol_rel"),
+                "Dist_Max20_Pct": indicators.get("dist_max20_pct"),
+                "Warnings": "; ".join(score_data.get("warnings", [])),
+            }
+            all_processed.append(row)
+        except Exception as e:
+            errors.append({"Ticker": ticker, "Erro": str(e)[:100]})
 
-                results.append({
-                    "Ticker": ticker,
-                    "Preco": indicators.get("close"),
-                    "Status": score_data["status"],
-                    "RadarLiteScore": score_data["radar_lite_score"],
-                    "Modos": ", ".join(score_data.get("radar_modes", [])),
-                    "RSI": indicators.get("rsi"),
-                    "RSI_Delta_3": indicators.get("rsi_delta_3"),
-                    "ROC_10": indicators.get("roc_10"),
-                    "ROC_20": indicators.get("roc_20"),
-                    "Preco_EMA50": "✅" if indicators.get("price_above_ema50") else "❌",
-                    "EMA21_EMA50": "✅" if indicators.get("ema21_above_ema50") else "❌",
-                    "Dist_EMA21_Pct": indicators.get("dist_ema21_pct"),
-                    "Vol_Rel": indicators.get("vol_rel"),
-                    "Dist_Max20_Pct": indicators.get("dist_max20_pct"),
-                    "Warnings": "; ".join(score_data.get("warnings", [])),
-                })
-        except Exception:
-            continue
+    df_all = pd.DataFrame(all_processed)
+    if not df_all.empty:
+        df_all = df_all.sort_values("RadarLiteScore", ascending=False).reset_index(drop=True)
 
-    df_out = pd.DataFrame(results)
-    if not df_out.empty:
-        df_out = df_out.sort_values("RadarLiteScore", ascending=False).reset_index(drop=True)
-    return df_out.head(max_tickers) if not df_out.empty else df_out
+    candidates = df_all[df_all["RadarLiteScore"] >= min_score] if not df_all.empty else pd.DataFrame()
+    if mode_filter and not candidates.empty:
+        candidates = candidates[candidates["Modos"].str.contains(mode_filter, na=False)]
+
+    rejected = df_all[df_all["RadarLiteScore"] < min_score] if not df_all.empty else pd.DataFrame()
+
+    candidates = candidates.head(max_tickers) if not candidates.empty else candidates
+    rejected_top = rejected.head(max_tickers) if not rejected.empty else rejected
+
+    return {
+        "candidates": candidates,
+        "rejected": rejected_top,
+        "errors": pd.DataFrame(errors) if errors else pd.DataFrame(),
+        "diagnostics": {
+            "loaded": loaded,
+            "processed": processed,
+            "approved": len(candidates),
+            "rejected": len(rejected),
+            "errors": len(errors),
+        },
+    }
