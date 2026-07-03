@@ -83,7 +83,7 @@ def calculate_radar_lite_indicators(df: pd.DataFrame) -> dict:
     dist_max20 = round((close / max_high_20 - 1) * 100, 2) if close and max_high_20 else None
     min_low_20 = _safe_float(df["low"].rolling(20).min().iloc[-1])
 
-    price_above_ema21 = bool(ma21 and close and close > ema21) if ema21 and close else False
+    price_above_ema21 = bool(ema21 and close and close > ema21) if ema21 and close else False
     price_above_ema50 = bool(ema50 and close and close > ema50) if ema50 and close else False
     price_above_ema200 = bool(ema200 and close and close > ema200) if ema200 and close else False
     ema21_above_ema50 = bool(ema21 and ema50 and ema21 > ema50) if ema21 and ema50 else False

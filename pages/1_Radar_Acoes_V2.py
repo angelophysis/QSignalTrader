@@ -128,11 +128,17 @@ with tab2:
 # Shared: render individual analysis
 # ═══════════════════════════════════════════════
 def _render_analysis(ticker):
-    with st.spinner(f"Analisando {ticker}..."):
-        analysis = analyze_stock_v2(ticker)
+    try:
+        with st.spinner(f"Analisando {ticker}..."):
+            analysis = analyze_stock_v2(ticker)
 
-    if "error" in analysis:
-        st.error(analysis["error"])
+        if "error" in analysis:
+            st.error(analysis["error"])
+            return
+    except Exception as exc:
+        st.error(f"Erro ao analisar {ticker}: {exc}")
+        with st.expander("Detalhes técnicos"):
+            st.exception(exc)
         return
 
     qs = analysis.get("qsignal_score", {})
