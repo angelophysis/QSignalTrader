@@ -104,3 +104,34 @@ STRATEGY_LABELS = {
 
 ACTION_NO_POSITION = ["COMPRAR_PARCIAL", "AGUARDAR_GATILHO", "OBSERVAR", "EVITAR"]
 ACTION_WITH_POSITION = ["AUMENTAR", "MANTER", "MANTER_COM_CAUTELA", "REDUZIR", "SAIR"]
+
+# ── Crypto V2 ──
+QSIGNAL_CRYPTO_WEIGHTS = {
+    "trend": 0.25, "momentum": 0.30, "location": 0.15,
+    "btc_relative_strength": 0.15, "risk": 0.10, "data_quality": 0.05,
+}
+
+CRYPTO_REGIME_LABELS = {
+    "CRYPTO_BULL_FORTE": "Bull forte", "CRYPTO_BULL_SAUDAVEL": "Bull saudável",
+    "CRYPTO_PULLBACK_DE_ALTA": "Pullback de alta", "CRYPTO_BREAKOUT_SETUP": "Breakout setup",
+    "CRYPTO_BREAKOUT_CONFIRMADO": "Breakout confirmado", "CRYPTO_ALTCOIN_LIDER": "Altcoin líder",
+    "CRYPTO_RECUPERACAO": "Recuperação", "CRYPTO_DISTRIBUICAO": "Distribuição",
+    "CRYPTO_BEAR_FORTE": "Bear forte", "CRYPTO_CAPITULACAO": "Capitulação",
+    "CRYPTO_LATERALIZACAO": "Lateralização", "CRYPTO_INDEFINIDO": "Indefinido",
+}
+
+CRYPTO_STRATEGY_LABELS = {
+    "CRYPTO_TREND_CONTINUATION": "Continuação de tendência",
+    "CRYPTO_PULLBACK_BUY": "Compra no pullback",
+    "CRYPTO_BREAKOUT_CONFIRMATION": "Confirmação de breakout",
+    "CRYPTO_ALTCOIN_LEADER": "Altcoin líder",
+    "CRYPTO_RECOVERY_WATCH": "Monitorar recuperação",
+    "CRYPTO_DEFENSIVE_MODE": "Modo defensivo",
+    "CRYPTO_NO_TRADE": "No trade",
+}
+
+CRYPTO_RADAR_RSI_MIN = 52
+CRYPTO_RADAR_RSI_MAX = 68
+CRYPTO_ATR_NORMAL_MAX = 8.0
+CRYPTO_ATR_HIGH = 12.0
+CRYPTO_CLUSTER_PCT = 1.5
