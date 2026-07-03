@@ -19,115 +19,6 @@ tab1, tab2 = st.tabs(["📡 Radar", "🔍 Análise Individual"])
 asset_data = load_stock_assets()
 default_tickers = asset_data["assets"]
 
-# ═══════════════════════════════════════════════
-# TAB 1: Radar
-# ═══════════════════════════════════════════════
-with tab1:
-    with st.sidebar:
-        st.subheader("Configuração do Radar")
-        # Only show if assets loaded
-        st.caption(f"Fonte: {asset_data['source']} ({asset_data['count']} ativos)")
-
-        use_manual = st.checkbox("Usar lista manual nesta execução")
-        if use_manual:
-            manual = st.text_area("Lista manual (um por linha)", "AAPL\nMSFT\nNVDA\nTSLA\nPETR4.SA")
-            tickers = [t.strip().upper() for t in manual.splitlines() if t.strip()]
-        else:
-            tickers = default_tickers
-
-        mode = st.selectbox("Modo de Radar", ["Todos"] + list(RADAR_MODES.values()))
-        mode_filter = None if mode == "Todos" else [k for k, v in RADAR_MODES.items() if v == mode][0]
-        min_score = st.slider("Score mínimo", 40, 90, DEFAULT_MIN_SCORE, 5)
-        max_show = st.slider("Máximo de ações", 5, 100, DEFAULT_MAX_TICKERS, 5)
-        force = st.checkbox("Forçar atualização (ignorar cache)")
-        run = st.button("🔎 Rodar Radar", use_container_width=True)
-
-    if not run:
-        st.info("Clique em **Rodar Radar** para analisar os ativos configurados em `radar_acoes.txt`.")
-        if not tickers:
-            st.warning("Nenhum ativo carregado. Edite `radar_acoes.txt` ou use a lista manual.")
-    else:
-        if force:
-            st.cache_data.clear()
-
-        with st.spinner(f"Analisando {len(tickers)} ações..."):
-            try:
-                result = run_stock_radar_v2(
-                    tickers=tickers, min_score=min_score,
-                    mode_filter=mode_filter, max_tickers=max_show,
-                )
-            except Exception as e:
-                st.error(f"Erro no radar: {e}")
-                st.stop()
-
-        # Diagnostics
-        diag = result.get("diagnostics", {})
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Carregados", diag.get("loaded", 0))
-        c2.metric("Processados", diag.get("processed", 0))
-        c3.metric("Aprovados", diag.get("approved", 0))
-        c4.metric("Rejeitados", diag.get("rejected", 0))
-        c5.metric("Erros", diag.get("errors", 0))
-
-        candidates = result.get("candidates")
-        rejected = result.get("rejected")
-        errors_df = result.get("errors")
-
-        if candidates is not None and not candidates.empty:
-            st.subheader(f"Candidatos — {len(candidates)} ações com score ≥ {min_score}")
-            st.dataframe(candidates, use_container_width=True, hide_index=True,
-                         column_config={"RadarLiteScore": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=100)})
-
-            ticker_sel = st.selectbox("Selecionar para análise detalhada", candidates["Ticker"].tolist())
-            if st.button("🔍 Analisar Ação Selecionada"):
-                _render_analysis(ticker_sel)
-        else:
-            st.info(f"Nenhuma ação atingiu o score mínimo ({min_score}).")
-            if rejected is not None and not rejected.empty:
-                st.subheader("Top rejeitados abaixo do corte")
-                top_rej = rejected.head(10)
-                st.dataframe(top_rej, use_container_width=True, hide_index=True)
-                ticker_sel = st.selectbox("Selecionar para análise detalhada", top_rej["Ticker"].tolist())
-                if st.button("🔍 Analisar mesmo assim"):
-                    _render_analysis(ticker_sel)
-
-        # Expandable: rejected
-        if rejected is not None and not rejected.empty:
-            with st.expander(f"Todos os rejeitados ({len(rejected)})"):
-                st.dataframe(rejected, use_container_width=True, hide_index=True)
-
-        # Expandable: errors
-        if errors_df is not None and not errors_df.empty:
-            with st.expander(f"Erros ({len(errors_df)})"):
-                st.dataframe(errors_df, use_container_width=True, hide_index=True)
-
-
-# ═══════════════════════════════════════════════
-# TAB 2: Análise Individual
-# ═══════════════════════════════════════════════
-with tab2:
-    st.subheader("Análise Individual V2")
-    st.caption("Digite qualquer ticker ou escolha um ativo do arquivo para análise completa.")
-
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        manual_ticker = st.text_input("Digite um ticker", placeholder="Ex: AAPL, PETR4.SA, MSFT")
-    with c2:
-        if default_tickers:
-            select_ticker = st.selectbox("Ou escolha da lista", [""] + default_tickers)
-        else:
-            select_ticker = ""
-
-    ticker_to_analyze = manual_ticker.strip().upper() if manual_ticker.strip() else select_ticker
-
-    if ticker_to_analyze and st.button("🔍 Analisar Ativo", use_container_width=True):
-        try:
-            _render_analysis(ticker_to_analyze)
-        except Exception as exc:
-            st.error(f"Erro ao processar análise de {ticker_to_analyze}. A aplicação continua funcionando.")
-            with st.expander("Detalhes técnicos"):
-                st.exception(exc)
-
 
 # ═══════════════════════════════════════════════
 # Shared: render individual analysis
@@ -217,3 +108,109 @@ def _render_analysis(ticker):
         st.caption("**Atenções**")
         for w in (formatted.get("bearish_points", analysis.get("warnings", [])))[:6]:
             st.caption(f"⚠️ {w}")
+
+
+# ═══════════════════════════════════════════════
+# TAB 1: Radar
+# ═══════════════════════════════════════════════
+with tab1:
+    with st.sidebar:
+        st.subheader("Configuração do Radar")
+        st.caption(f"Fonte: {asset_data['source']} ({asset_data['count']} ativos)")
+
+        use_manual = st.checkbox("Usar lista manual nesta execução")
+        if use_manual:
+            manual = st.text_area("Lista manual (um por linha)", "AAPL\nMSFT\nNVDA\nTSLA\nPETR4.SA")
+            tickers = [t.strip().upper() for t in manual.splitlines() if t.strip()]
+        else:
+            tickers = default_tickers
+
+        mode = st.selectbox("Modo de Radar", ["Todos"] + list(RADAR_MODES.values()))
+        mode_filter = None if mode == "Todos" else [k for k, v in RADAR_MODES.items() if v == mode][0]
+        min_score = st.slider("Score mínimo", 40, 90, DEFAULT_MIN_SCORE, 5)
+        max_show = st.slider("Máximo de ações", 5, 100, DEFAULT_MAX_TICKERS, 5)
+        force = st.checkbox("Forçar atualização (ignorar cache)")
+        run = st.button("🔎 Rodar Radar", use_container_width=True)
+
+    if not run:
+        st.info("Clique em **Rodar Radar** para analisar os ativos configurados em `radar_acoes.txt`.")
+        if not tickers:
+            st.warning("Nenhum ativo carregado. Edite `radar_acoes.txt` ou use a lista manual.")
+    else:
+        if force:
+            st.cache_data.clear()
+
+        with st.spinner(f"Analisando {len(tickers)} ações..."):
+            try:
+                result = run_stock_radar_v2(
+                    tickers=tickers, min_score=min_score,
+                    mode_filter=mode_filter, max_tickers=max_show,
+                )
+            except Exception as e:
+                st.error(f"Erro no radar: {e}")
+                st.stop()
+
+        diag = result.get("diagnostics", {})
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Carregados", diag.get("loaded", 0))
+        c2.metric("Processados", diag.get("processed", 0))
+        c3.metric("Aprovados", diag.get("approved", 0))
+        c4.metric("Rejeitados", diag.get("rejected", 0))
+        c5.metric("Erros", diag.get("errors", 0))
+
+        candidates = result.get("candidates")
+        rejected = result.get("rejected")
+        errors_df = result.get("errors")
+
+        if candidates is not None and not candidates.empty:
+            st.subheader(f"Candidatos — {len(candidates)} ações com score ≥ {min_score}")
+            st.dataframe(candidates, use_container_width=True, hide_index=True,
+                         column_config={"RadarLiteScore": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=100)})
+
+            ticker_sel = st.selectbox("Selecionar para análise detalhada", candidates["Ticker"].tolist())
+            if st.button("🔍 Analisar Ação Selecionada"):
+                _render_analysis(ticker_sel)
+        else:
+            st.info(f"Nenhuma ação atingiu o score mínimo ({min_score}).")
+            if rejected is not None and not rejected.empty:
+                st.subheader("Top rejeitados abaixo do corte")
+                top_rej = rejected.head(10)
+                st.dataframe(top_rej, use_container_width=True, hide_index=True)
+                ticker_sel = st.selectbox("Selecionar para análise detalhada", top_rej["Ticker"].tolist())
+                if st.button("🔍 Analisar mesmo assim"):
+                    _render_analysis(ticker_sel)
+
+        if rejected is not None and not rejected.empty:
+            with st.expander(f"Todos os rejeitados ({len(rejected)})"):
+                st.dataframe(rejected, use_container_width=True, hide_index=True)
+
+        if errors_df is not None and not errors_df.empty:
+            with st.expander(f"Erros ({len(errors_df)})"):
+                st.dataframe(errors_df, use_container_width=True, hide_index=True)
+
+
+# ═══════════════════════════════════════════════
+# TAB 2: Análise Individual
+# ═══════════════════════════════════════════════
+with tab2:
+    st.subheader("Análise Individual V2")
+    st.caption("Digite qualquer ticker ou escolha um ativo do arquivo para análise completa.")
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        manual_ticker = st.text_input("Digite um ticker", placeholder="Ex: AAPL, PETR4.SA, MSFT")
+    with c2:
+        if default_tickers:
+            select_ticker = st.selectbox("Ou escolha da lista", [""] + default_tickers)
+        else:
+            select_ticker = ""
+
+    ticker_to_analyze = manual_ticker.strip().upper() if manual_ticker.strip() else select_ticker
+
+    if ticker_to_analyze and st.button("🔍 Analisar Ativo", use_container_width=True):
+        try:
+            _render_analysis(ticker_to_analyze)
+        except Exception as exc:
+            st.error(f"Erro ao processar análise de {ticker_to_analyze}. A aplicação continua funcionando.")
+            with st.expander("Detalhes técnicos"):
+                st.exception(exc)
