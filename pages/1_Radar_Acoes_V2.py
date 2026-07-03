@@ -121,7 +121,12 @@ with tab2:
     ticker_to_analyze = manual_ticker.strip().upper() if manual_ticker.strip() else select_ticker
 
     if ticker_to_analyze and st.button("🔍 Analisar Ativo", use_container_width=True):
-        _render_analysis(ticker_to_analyze)
+        try:
+            _render_analysis(ticker_to_analyze)
+        except Exception as exc:
+            st.error(f"Erro ao processar análise de {ticker_to_analyze}. A aplicação continua funcionando.")
+            with st.expander("Detalhes técnicos"):
+                st.exception(exc)
 
 
 # ═══════════════════════════════════════════════
@@ -141,53 +146,61 @@ def _render_analysis(ticker):
             st.exception(exc)
         return
 
-    qs = analysis.get("qsignal_score", {})
-    regime = analysis.get("regime", {})
-    strategy = analysis.get("strategy", {})
-    trend = analysis.get("trend", {})
-    location = analysis.get("location", {})
-    risk = analysis.get("risk", {})
-    rs = analysis.get("relative_strength", {})
+    qs = analysis.get("qsignal_score") or {}
+    regime = analysis.get("regime") or {}
+    strategy = analysis.get("strategy") or {}
+    trend = analysis.get("trend") or {}
+    location = analysis.get("location") or {}
+    risk = analysis.get("risk") or {}
+    rs = analysis.get("relative_strength") or {}
+    momentum = analysis.get("momentum") or {}
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Regime", regime.get("regime", "—"))
-    c2.metric("Estratégia", strategy.get("strategy", "—"))
+    c1.metric("Regime", str(regime.get("regime", "—")))
+    c2.metric("Estratégia", str(strategy.get("strategy", "—")))
     c3.metric("QSignalScore", f"{qs.get('qsignal_stock_score', '—')}/100")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Preço", f"R$ {analysis['preco_atual']:.2f}" if analysis.get("preco_atual") else "—")
-    c2.metric("Confiança", regime.get("confidence", "—"))
-    c3.metric("Sem posição", strategy.get("action_without_position", "—"))
-    c4.metric("Com posição", strategy.get("action_with_position", "—"))
+    preco_str = f"R$ {analysis.get('preco_atual', 0):.2f}" if isinstance(analysis.get('preco_atual'), (int, float)) else "—"
+    c1.metric("Preço", preco_str)
+    c2.metric("Confiança", str(regime.get("confidence", "—")))
+    c3.metric("Sem posição", str(strategy.get("action_without_position", "—")))
+    c4.metric("Com posição", str(strategy.get("action_with_position", "—")))
 
     st.subheader("Componentes do Score")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Trend", f"{trend.get('trend_score', '—')}", delta=trend.get("classification", ""))
-    c2.metric("Momentum", f"{analysis['momentum'].get('momentum_score', '—')}", delta=analysis["momentum"].get("classification", ""))
-    c3.metric("Location", f"{location.get('location_score', '—')}", delta=location.get("classification", ""))
-    c4.metric("RS", f"{rs.get('relative_strength_score', '—')}", delta=rs.get("classification", ""))
-    c5.metric("Risk", f"{risk.get('risk_score', '—')}", delta=risk.get("classification", ""))
+    c1.metric("Trend", f"{trend.get('trend_score', '—')}", delta=str(trend.get("classification", "")))
+    c2.metric("Momentum", f"{momentum.get('momentum_score', '—')}", delta=str(momentum.get("classification", "")))
+    c3.metric("Location", f"{location.get('location_score', '—')}", delta=str(location.get("classification", "")))
+    c4.metric("RS", f"{rs.get('relative_strength_score', '—')}", delta=str(rs.get("classification", "")))
+    c5.metric("Risk", f"{risk.get('risk_score', '—')}", delta=str(risk.get("classification", "")))
     c6.metric("Qualidade", f"{qs.get('component_scores', {}).get('data_quality', '—')}")
 
     st.subheader("Suportes & Resistências")
     c1, c2 = st.columns(2)
     with c1:
-        supports = analysis.get("supports", [])
+        supports = analysis.get("supports", []) or []
         if supports:
-            st.dataframe([{"Nível": s.get("label"), "Preço": f"{s['price']:.2f}",
+            st.dataframe([{"Nível": s.get("label", "—"), "Preço": f"{s.get('price', 0):.2f}" if s.get('price') else "—",
                             "Força": f"{s.get('strength', '—')}/100", "Dist": f"{s.get('distance_pct', 0):.1f}%"}
                            for s in supports], use_container_width=True, hide_index=True)
+        else:
+            st.caption("Níveis insuficientes para suportes.")
     with c2:
-        resistances = analysis.get("resistances", [])
+        resistances = analysis.get("resistances", []) or []
         if resistances:
-            st.dataframe([{"Nível": r.get("label"), "Preço": f"{r['price']:.2f}",
+            st.dataframe([{"Nível": r.get("label", "—"), "Preço": f"{r.get('price', 0):.2f}" if r.get('price') else "—",
                             "Força": f"{r.get('strength', '—')}/100", "Dist": f"{r.get('distance_pct', 0):.1f}%"}
                            for r in resistances], use_container_width=True, hide_index=True)
+        else:
+            st.caption("Níveis insuficientes para resistências.")
 
-    if strategy.get("trigger_level") or strategy.get("invalidation_level"):
+    trigger_val = strategy.get("trigger_level")
+    inval_val = strategy.get("invalidation_level")
+    if trigger_val or inval_val:
         c1, c2 = st.columns(2)
-        c1.metric("Gatilho", f"{strategy['trigger_level']:.2f}" if strategy.get("trigger_level") else "—")
-        c2.metric("Invalidação", f"{strategy['invalidation_level']:.2f}" if strategy.get("invalidation_level") else "—")
+        c1.metric("Gatilho", f"{trigger_val:.2f}" if isinstance(trigger_val, (int, float)) else "—")
+        c2.metric("Invalidação", f"{inval_val:.2f}" if isinstance(inval_val, (int, float)) else "—")
 
     formatted = analysis.get("formatted", {})
     if formatted:
