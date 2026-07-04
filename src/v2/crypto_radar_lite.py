@@ -51,6 +51,10 @@ def _calculate_4h_indicators(df: pd.DataFrame) -> dict:
     max_high_20 = _safe(df["high"].rolling(20).max().iloc[-1])
     dist_max20 = round((close / max_high_20 - 1) * 100, 2) if close and max_high_20 else None
 
+    vol_current = _safe(latest.get("volume"))
+    vol_mean_20 = _safe(df["volume"].rolling(20).mean().iloc[-1]) if "volume" in df.columns else None
+    vol_rel = round(vol_current / vol_mean_20, 2) if vol_current and vol_mean_20 else None
+
     price_above_ema21 = bool(close and ema21 and close > ema21)
     price_above_ema50 = bool(close and ema50 and close > ema50)
     ema21_above_50 = bool(ema21 and ema50 and ema21 > ema50)
@@ -60,6 +64,7 @@ def _calculate_4h_indicators(df: pd.DataFrame) -> dict:
         "rsi_delta_5": round(rsi - rsi_5, 1) if rsi and rsi_5 else None,
         "ema21": ema21, "ema50": ema50, "roc_10": roc_10, "atr_pct": atr_pct,
         "dist_ema21_pct": dist_ema21, "dist_max20_pct": dist_max20,
+        "vol_rel": vol_rel,
         "price_above_ema21": price_above_ema21, "price_above_ema50": price_above_ema50,
         "ema21_above_50": ema21_above_50, "candles": len(df),
     }
@@ -127,6 +132,9 @@ def run_crypto_radar_v2(symbols: list[str], min_score: float = 40, max_tickers: 
                 warnings_list.append("RSI sobrecomprado")
             if rsi is not None and rsi < 40:
                 warnings_list.append("RSI fraco")
+            vol_rel_val = ind.get("vol_rel")
+            if vol_rel_val is not None and vol_rel_val < 0.8:
+                warnings_list.append(f"Volume baixo ({vol_rel_val:.2f}x)")
 
             modes = []
             if rsi is not None and CRYPTO_RADAR_RSI_MIN <= rsi <= CRYPTO_RADAR_RSI_MAX:
@@ -147,6 +155,7 @@ def run_crypto_radar_v2(symbols: list[str], min_score: float = 40, max_tickers: 
                 "EMA21_EMA50": ind.get("ema21_above_50", False),
                 "Dist_EMA21_Pct": ind.get("dist_ema21_pct"),
                 "ATR_Pct": ind.get("atr_pct"),
+                "Vol_Rel": ind.get("vol_rel"),
                 "Dist_Max20_Pct": ind.get("dist_max20_pct"),
                 "Modos": ", ".join(modes),
                 "Warnings": "; ".join(warnings_list) if warnings_list else "",

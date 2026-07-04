@@ -73,9 +73,9 @@ def clean_radar_table(df: pd.DataFrame) -> pd.DataFrame:
     for col in _BOOL_SIGNAL_COLS:
         if col in out.columns:
             out[col] = out[col].apply(
-                lambda v: "✅" if v is True or str(v).lower() in ("true", "1")
-                else "❌" if v is False or str(v).lower() in ("false", "0")
-                else ""
+                lambda v: "✅" if v is True or str(v).strip().lower() in ("true", "1", "✅")
+                else "❌" if v is False or str(v).strip().lower() in ("false", "0", "❌")
+                else str(v).strip() if pd.notna(v) and str(v).strip() else ""
             )
 
     if "Modos" in out.columns:
