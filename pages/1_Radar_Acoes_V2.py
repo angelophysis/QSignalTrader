@@ -7,6 +7,7 @@ from src.v2.config import DEFAULT_MIN_SCORE, DEFAULT_MAX_TICKERS, RADAR_MODES
 from src.v2.radar_lite import run_stock_radar_v2
 from src.v2.stock_analysis import analyze_stock_v2
 from src.v2.asset_loader import load_stock_assets
+from src.v2.table_formatting import clean_radar_table
 
 st.set_page_config(page_title="Radar Ações V2", page_icon="📊", layout="wide")
 
@@ -471,9 +472,13 @@ with tab1:
         errors_df = result.get("errors")
 
         if candidates is not None and not candidates.empty:
+            display_df = clean_radar_table(candidates)
             st.subheader(f"Candidatos — {len(candidates)} ações com score ≥ {min_score}")
-            st.dataframe(candidates, use_container_width=True, hide_index=True,
-                         column_config={"RadarLiteScore": st.column_config.ProgressColumn(format="%d", min_value=0, max_value=100)})
+            try:
+                st.dataframe(display_df, use_container_width=True, hide_index=True,
+                             column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d")})
+            except Exception:
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
             ticker_sel = st.selectbox("Selecionar para análise detalhada", candidates["Ticker"].tolist())
             if st.button("🔍 Analisar Ação Selecionada"):
                 _render_analysis(ticker_sel)
@@ -482,14 +487,14 @@ with tab1:
             if rejected is not None and not rejected.empty:
                 st.subheader("Top rejeitados abaixo do corte")
                 top_rej = rejected.head(10)
-                st.dataframe(top_rej, use_container_width=True, hide_index=True)
+                st.dataframe(clean_radar_table(top_rej), use_container_width=True, hide_index=True)
                 ticker_sel = st.selectbox("Selecionar para análise detalhada", top_rej["Ticker"].tolist())
                 if st.button("🔍 Analisar mesmo assim"):
                     _render_analysis(ticker_sel)
 
         if rejected is not None and not rejected.empty:
             with st.expander(f"Todos os rejeitados ({len(rejected)})"):
-                st.dataframe(rejected, use_container_width=True, hide_index=True)
+                st.dataframe(clean_radar_table(rejected), use_container_width=True, hide_index=True)
         if errors_df is not None and not errors_df.empty:
             with st.expander(f"Erros ({len(errors_df)})"):
                 st.dataframe(errors_df, use_container_width=True, hide_index=True)
