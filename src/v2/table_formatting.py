@@ -32,6 +32,11 @@ _LABEL_MAP_MINI = {
     "PULLBACK_DE_ALTA": "Pullback de alta",
     "BREAKOUT_SETUP": "Breakout setup",
     "RECUPERACAO_INICIAL": "Recuperação inicial",
+    "PRIORIDADE_ALTA": "Prioridade alta",
+    "BOM_CANDIDATO": "Bom candidato",
+    "CANDIDATO_OBSERVAVEL": "Candidato observável",
+    "MONITORAR_FRACO": "Monitorar fraco",
+    "IGNORAR": "Ignorar",
 }
 
 
@@ -66,6 +71,8 @@ def clean_radar_table(df: pd.DataFrame) -> pd.DataFrame:
 
     if "Modos" in out.columns:
         out["Modos"] = out["Modos"].apply(_humanize_modes)
+    if "Status" in out.columns:
+        out["Status"] = out["Status"].apply(_humanize_modes)
     if "Avisos" in out.columns:
         out["Avisos"] = out["Avisos"].apply(lambda w: "" if not w or str(w) == "None" else str(w))
 

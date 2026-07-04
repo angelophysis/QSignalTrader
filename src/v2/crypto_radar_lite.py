@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from src.data.fetch_crypto import get_crypto_data
-from src.indicators.technicals import add_rsi, add_emas
+from src.indicators.technicals import add_rsi, add_emas, add_atr
 from src.v2.config import CRYPTO_RADAR_RSI_MIN, CRYPTO_RADAR_RSI_MAX
 
 
@@ -30,6 +30,7 @@ def _calculate_4h_indicators(df: pd.DataFrame) -> dict:
         return {"error": "Dados insuficientes", "candles": len(df)}
     df = add_rsi(df.copy(), period=14)
     df = add_emas(df.copy(), periods=[21, 50])
+    df = add_atr(df.copy(), period=14)
     latest = df.iloc[-1]
 
     rsi = _safe(latest.get("rsi"))
@@ -46,6 +47,10 @@ def _calculate_4h_indicators(df: pd.DataFrame) -> dict:
     atr_val = _safe(latest.get("atr"))
     atr_pct = round(atr_val / close * 100, 2) if atr_val and close else None
 
+    dist_ema21 = round((close / ema21 - 1) * 100, 2) if close and ema21 else None
+    max_high_20 = _safe(df["high"].rolling(20).max().iloc[-1])
+    dist_max20 = round((close / max_high_20 - 1) * 100, 2) if close and max_high_20 else None
+
     price_above_ema21 = bool(close and ema21 and close > ema21)
     price_above_ema50 = bool(close and ema50 and close > ema50)
     ema21_above_50 = bool(ema21 and ema50 and ema21 > ema50)
@@ -54,6 +59,7 @@ def _calculate_4h_indicators(df: pd.DataFrame) -> dict:
         "close": close, "rsi": rsi, "rsi_delta_3": round(rsi - rsi_3, 1) if rsi and rsi_3 else None,
         "rsi_delta_5": round(rsi - rsi_5, 1) if rsi and rsi_5 else None,
         "ema21": ema21, "ema50": ema50, "roc_10": roc_10, "atr_pct": atr_pct,
+        "dist_ema21_pct": dist_ema21, "dist_max20_pct": dist_max20,
         "price_above_ema21": price_above_ema21, "price_above_ema50": price_above_ema50,
         "ema21_above_50": ema21_above_50, "candles": len(df),
     }
@@ -127,9 +133,9 @@ def run_crypto_radar_v2(symbols: list[str], min_score: float = 40, max_tickers: 
                 "ROC_10": ind.get("roc_10"),
                 "Price_EMA50": ind.get("price_above_ema50", False),
                 "EMA21_EMA50": ind.get("ema21_above_50", False),
-                "Dist_EMA21_Pct": None,
+                "Dist_EMA21_Pct": ind.get("dist_ema21_pct"),
                 "ATR_Pct": ind.get("atr_pct"),
-                "Dist_Max20_Pct": None,
+                "Dist_Max20_Pct": ind.get("dist_max20_pct"),
                 "Modos": ", ".join(modes),
                 "Warnings": "; ".join(warnings_list) if warnings_list else "",
             })
