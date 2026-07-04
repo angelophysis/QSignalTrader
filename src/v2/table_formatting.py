@@ -69,6 +69,15 @@ def clean_radar_table(df: pd.DataFrame) -> pd.DataFrame:
         if not is_bool:
             out[col] = out[col].apply(lambda v: "" if pd.isna(v) or str(v) == "None" else v)
 
+    _BOOL_SIGNAL_COLS = {"P > EMA50", "E21 > E50"}
+    for col in _BOOL_SIGNAL_COLS:
+        if col in out.columns:
+            out[col] = out[col].apply(
+                lambda v: "✅" if v is True or str(v).lower() in ("true", "1")
+                else "❌" if v is False or str(v).lower() in ("false", "0")
+                else ""
+            )
+
     if "Modos" in out.columns:
         out["Modos"] = out["Modos"].apply(_humanize_modes)
     if "Status" in out.columns:

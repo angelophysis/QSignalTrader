@@ -116,6 +116,18 @@ def run_crypto_radar_v2(symbols: list[str], min_score: float = 40, max_tickers: 
 
             score = min(100, max(0, score))
 
+            # Informative warnings (do not affect score)
+            d21 = ind.get("dist_ema21_pct")
+            if d21 is not None and abs(d21) > 12:
+                warnings_list.append(f"Preço esticado da EMA21 ({d21:.1f}%)")
+            atr_pct_val = ind.get("atr_pct")
+            if atr_pct_val is not None and atr_pct_val > 8:
+                warnings_list.append(f"ATR elevado ({atr_pct_val:.1f}%)")
+            if rsi is not None and rsi > 72:
+                warnings_list.append("RSI sobrecomprado")
+            if rsi is not None and rsi < 40:
+                warnings_list.append("RSI fraco")
+
             modes = []
             if rsi is not None and CRYPTO_RADAR_RSI_MIN <= rsi <= CRYPTO_RADAR_RSI_MAX:
                 if ind.get("price_above_ema50") and ind.get("ema21_above_50"):
