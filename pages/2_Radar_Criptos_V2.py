@@ -144,6 +144,26 @@ def _render_analysis(symbol):
         dq = qs.get("component_scores", {}).get("data_quality")
         _score_card("Qualidade", dq)
 
+    # ── Timing & Participação ──
+    rsi_d3 = momentum.get("rsi_delta_3")
+    vol_rel = momentum.get("volume_relative")
+    if rsi_d3 is not None or vol_rel is not None:
+        st.markdown('<div class="v2-section">Timing &amp; Participação</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            rsi_note = ("RSI melhorou no curto prazo." if isinstance(rsi_d3, (int, float)) and rsi_d3 > 2
+                        else "RSI perdeu força no curto prazo." if isinstance(rsi_d3, (int, float)) and rsi_d3 < -2
+                        else "RSI praticamente estável." if isinstance(rsi_d3, (int, float)) else "")
+            _card("RSI 3c", f"{rsi_d3:+.1f}" if isinstance(rsi_d3, (int, float)) else "—", _score_tone(rsi_d3 if rsi_d3 and rsi_d3 > 0 else (abs(rsi_d3) if rsi_d3 else None)))
+            if rsi_note: st.caption(rsi_note)
+        with c2:
+            vol_note = ("Volume forte acima da média." if isinstance(vol_rel, (int, float)) and vol_rel >= 1.5
+                        else "Volume acima da média." if isinstance(vol_rel, (int, float)) and vol_rel >= 1.2
+                        else "Volume normal." if isinstance(vol_rel, (int, float)) and vol_rel >= 0.8
+                        else "Volume baixo." if isinstance(vol_rel, (int, float)) and vol_rel > 0 else "")
+            _card("Vol Rel", f"{vol_rel:.2f}x" if isinstance(vol_rel, (int, float)) else "—", _score_tone(30 + (vol_rel * 30) if isinstance(vol_rel, (int, float)) else None))
+            if vol_note: st.caption(vol_note)
+
     st.markdown('<div class="v2-section">Suportes &amp; Resistências</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
