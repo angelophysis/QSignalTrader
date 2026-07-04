@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from src.data.fetch_crypto import get_crypto_data
-from src.indicators.technicals import add_rsi, add_emas, add_atr
+from src.indicators.technicals import add_rsi, add_emas
 from src.v2.config import CRYPTO_RADAR_RSI_MIN, CRYPTO_RADAR_RSI_MAX
 
 
