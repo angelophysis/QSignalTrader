@@ -17,6 +17,14 @@ def _safe(val):
     return None
 
 
+def _score_to_status(score: int) -> str:
+    if score >= 85: return "PRIORIDADE_ALTA"
+    if score >= 75: return "BOM_CANDIDATO"
+    if score >= 60: return "CANDIDATO_OBSERVAVEL"
+    if score >= 40: return "MONITORAR_FRACO"
+    return "IGNORAR"
+
+
 def _calculate_4h_indicators(df: pd.DataFrame) -> dict:
     if df.empty or len(df) < 30:
         return {"error": "Dados insuficientes", "candles": len(df)}
@@ -113,9 +121,17 @@ def run_crypto_radar_v2(symbols: list[str], min_score: float = 40, max_tickers: 
 
             all_processed.append({
                 "Symbol": sym, "Price": ind.get("close"),
-                "RadarScore": score, "RSI": rsi, "RSI_Delta_3": rsi_d3,
-                "ROC_10": ind.get("roc_10"), "ATR_Pct": ind.get("atr_pct"),
-                "Modos": ", ".join(modes), "Warnings": "; ".join(warnings_list),
+                "RadarScore": score,
+                "Status": _score_to_status(score),
+                "RSI": rsi, "RSI_Delta_3": rsi_d3,
+                "ROC_10": ind.get("roc_10"),
+                "Price_EMA50": ind.get("price_above_ema50", False),
+                "EMA21_EMA50": ind.get("ema21_above_50", False),
+                "Dist_EMA21_Pct": None,
+                "ATR_Pct": ind.get("atr_pct"),
+                "Dist_Max20_Pct": None,
+                "Modos": ", ".join(modes),
+                "Warnings": "; ".join(warnings_list) if warnings_list else "",
             })
         except Exception as e:
             errors_list.append({"Symbol": sym, "Erro": str(e)[:100]})

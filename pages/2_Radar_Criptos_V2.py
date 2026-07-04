@@ -3,6 +3,7 @@ QSignalTrader V2 — Radar de Criptos
 """
 import streamlit as st
 
+import pandas as pd
 from src.v2.radar_lite import run_stock_radar_v2
 from src.v2.crypto_radar_lite import run_crypto_radar_v2
 from src.v2.crypto_asset_loader import load_crypto_assets
@@ -99,6 +100,38 @@ tab1, tab2 = st.tabs(["📡 Radar", "🔍 Análise Individual"])
 
 
 # ═══════════════ Render Analysis ═══════════════
+def _prepare_crypto_radar_table(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    col_map = {
+        "Symbol": "Symbol", "Price": "Preço", "RadarScore": "RadarLiteScore", "Status": "Status",
+        "RSI": "RSI", "RSI_Delta_3": "RSI_Delta_3", "ROC_10": "ROC_10",
+        "Price_EMA50": "Preço_EMA50", "EMA21_EMA50": "EMA21_EMA50",
+        "Dist_EMA21_Pct": "Dist_EMA21_Pct", "ATR_Pct": "ATR_Pct",
+        "Dist_Max20_Pct": "Dist_Max20_Pct", "Modos": "Modos", "Warnings": "Warnings",
+    }
+    for old, new in col_map.items():
+        if old in out.columns and old != new:
+            out.rename(columns={old: new}, inplace=True)
+
+    # Ensure key columns exist
+    for col in ["Preço", "Status", "RadarLiteScore", "RSI", "RSI_Delta_3", "ROC_10",
+                "Preço_EMA50", "EMA21_EMA50", "Dist_EMA21_Pct", "ATR_Pct",
+                "Dist_Max20_Pct", "Modos", "Warnings"]:
+        if col not in out.columns:
+            out[col] = None
+
+    if "Warnings" in out.columns:
+        out["Warnings"] = out["Warnings"].apply(lambda w: "" if pd.isna(w) or str(w) == "None" else str(w))
+    if "Modos" in out.columns:
+        out["Modos"] = out["Modos"].apply(lambda m: ", ".join([_h(mm.strip()) for mm in str(m).split(",")]) if pd.notna(m) and str(m) != "None" else "")
+
+    col_order = ["Symbol", "Preço", "Status", "RadarLiteScore", "Modos", "RSI", "RSI_Delta_3",
+                 "ROC_10", "Preço_EMA50", "EMA21_EMA50", "Dist_EMA21_Pct", "ATR_Pct", "Dist_Max20_Pct", "Warnings"]
+    return out[[c for c in col_order if c in out.columns]]
+
+
 def _render_analysis(symbol):
     try:
         with st.spinner(f"Analisando {symbol}..."):
@@ -237,8 +270,13 @@ with tab1:
         errors_df = result.get("errors")
 
         if candidates is not None and not candidates.empty:
+            display_df = _prepare_crypto_radar_table(candidates)
             st.subheader(f"Candidatos — {len(candidates)} criptos com score ≥ {min_score}")
-            st.dataframe(candidates, use_container_width=True, hide_index=True)
+            try:
+                st.dataframe(display_df, use_container_width=True, hide_index=True,
+                             column_config={"RadarLiteScore": st.column_config.ProgressColumn("RadarLiteScore", min_value=0, max_value=100, format="%d")})
+            except Exception:
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
             ticker_sel = st.selectbox("Selecionar para análise detalhada", candidates["Symbol"].tolist())
             if st.button("🔍 Analisar Cripto Selecionada"): _render_analysis(ticker_sel)
         else:
@@ -246,12 +284,13 @@ with tab1:
             if rejected is not None and not rejected.empty:
                 st.subheader("Top rejeitados abaixo do corte")
                 top_rej = rejected.head(10)
-                st.dataframe(top_rej, use_container_width=True, hide_index=True)
+                st.dataframe(_prepare_crypto_radar_table(top_rej), use_container_width=True, hide_index=True)
                 ticker_sel = st.selectbox("Selecionar para análise detalhada", top_rej["Symbol"].tolist())
                 if st.button("🔍 Analisar mesmo assim"): _render_analysis(ticker_sel)
 
         if rejected is not None and not rejected.empty:
-            with st.expander(f"Rejeitados ({len(rejected)})"): st.dataframe(rejected, use_container_width=True, hide_index=True)
+            with st.expander(f"Rejeitados ({len(rejected)})"):
+                st.dataframe(_prepare_crypto_radar_table(rejected), use_container_width=True, hide_index=True)
         if errors_df is not None and not errors_df.empty:
             with st.expander(f"Erros ({len(errors_df)})"): st.dataframe(errors_df, use_container_width=True, hide_index=True)
 
